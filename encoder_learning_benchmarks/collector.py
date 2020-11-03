@@ -283,13 +283,13 @@ def collect_tasks(n_repeat=1):
 
     tasks = {}
     for method in ["offline", "online"]:
-        for dataset in modules["datasets"].values():
+        for optimizer in modules["optimizers"].values():
             for network in modules["networks"].values():
                 for declrn in modules["decoder_learners"].values():
                     for enclrn in [
                             None, *modules["encoder_learners"].values()
                     ]:
-                        for optimizer in modules["optimizers"].values():
+                        for dataset in modules["datasets"].values():
                             # Only pair encoder learners with their
                             # corresponding supported network class
                             if (not enclrn is None) and (
