@@ -355,21 +355,21 @@ def child_process_task(args, task_hash, task):
     # Make sure the target directory exists
     os.makedirs(args.tar, exist_ok=True)
 
-    # Create the output file. Always delete the output file if something goes
-    # wrong.
+    # Create the output file. Write to a temporary file first, then move that
+    # file to the target.
     outfile = os.path.join(
         args.tar, "encoder_learning_benchmarks_{}.h5".format(task_hash))
-    try:
-        with h5py.File(outfile, 'w') as f:
-            # Store the task configuration
-            f.attrs["task"] = json.dumps(task_dict)
+    tmpfile = "." + outfile + ".tmp"
+    with h5py.File(tmpfile, 'w') as f:
+        # Store the task configuration
+        f.attrs["task"] = json.dumps(task_dict)
 
-            # Store the benchmark result
-            for key, value in benchmark_result.items():
-                f.create_dataset(key, data=value)
-    except Exception as e:
-        os.unlink(outfile)
-        raise e
+        # Store the benchmark result
+        for key, value in benchmark_result.items():
+            f.create_dataset(key, data=value)
+
+    # This is an atomic operation on POSIX systems
+    os.rename(tmpfile, outfile)
 
 
 ###############################################################################
