@@ -4,7 +4,7 @@ Code for comparing different online/offline supervised/unsupervised training met
 
 ## Dependencies
 
-* Linux (uses the `select` module on pipes for IPC in the task runnser)
+* Linux (uses the `select` module on pipes for IPC in the task runner)
 * Python 3.8
 * The following Python packages are required
   * numpy
