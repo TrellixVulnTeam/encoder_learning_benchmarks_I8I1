@@ -381,6 +381,8 @@ def child_process_task(args, task_hash, task):
 
 
 def main_parent():
+    import random
+
     # Construct the parser
     parser = argparse.ArgumentParser(
         description="Runs the encoder learning benchmark")
@@ -462,11 +464,11 @@ def main_parent():
 
     # Deterministically shuffle the items. This ensures that each node in a
     # compute cluster gets approximately the same kind of workload.
-    tasks_list = list(enumerate(tasks.items()))
+    tasks_list = list(tasks.items())
     np.random.RandomState(582781).shuffle(tasks_list)
 
     # Extract the selected partitions
-    part_bnds = np.linspace(0, len(tasks), args.n_partitions + 1, dtype=np.int)
+    part_bnds = np.linspace(0, len(tasks_list), args.n_partitions + 1, dtype=np.int)
     part_ptr = 0
     tasks_sel = {}
     for i, (key, value) in enumerate(tasks_list):
