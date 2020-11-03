@@ -298,6 +298,12 @@ def collect_tasks(n_repeat=1):
                                 if not (network.ctor in
                                         enclrn.supported_network_classes):
                                     continue
+
+                            # XXX Temporarily turn of online learning when using
+                            # MNIST (really slow)
+                            if (dataset.name == "mnist") and (method == "online"):
+                                continue
+
                             _collect_tasks_for_setup(tasks, n_repeat, method,
                                                      optimizer, dataset,
                                                      network, declrn, enclrn)
