@@ -31,10 +31,10 @@ class Oja(EncoderLearningRule):
         }
 
 
-manifest = EncoderLearningRuleManifest(name="oja",
-                                       ctor=Oja,
-                                       supported_network_classes={
-                                           Perceptron,
-                                       },
-                                       is_supervised=False)
+#manifest = EncoderLearningRuleManifest(name="oja",
+#                                       ctor=Oja,
+#                                       supported_network_classes={
+#                                           Perceptron,
+#                                       },
+#                                       is_supervised=False)
 
