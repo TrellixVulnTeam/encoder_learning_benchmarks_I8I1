@@ -218,7 +218,7 @@ def select_gaussian_clusters_biased(task_descr):
     descriptor. In particular, if the trial descriptor indicates that learning
     is supposed to be "online", then we'll switch to a "biased" dataset.
     """
-    return task_descr.is_online
+    return task_descr.sequential
 
 manifest = DatasetManifest(name="gaussian_clusters",
                            ctor=GaussianClusters,
