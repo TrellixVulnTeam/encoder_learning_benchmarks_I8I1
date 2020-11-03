@@ -242,7 +242,8 @@ def _collect_tasks_for_setup(tasks, n_repeat, method, optimizer, dataset,
         task.decoder_learner_name = declrn.name
         task.encoder_learner_name = ("" if enclrn is None else enclrn.name)
         task.seed = seeds[i]  # Reproducibly select a seed for each combination
-        task.is_online = (method == "online")
+        task.sequential = (method == "online")
+        task.batch_size = 1 if (method == "online") else 100
 
         # For each component, collect all parameters given the task descriptor
         # so far

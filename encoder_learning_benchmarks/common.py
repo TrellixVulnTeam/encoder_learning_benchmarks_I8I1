@@ -763,5 +763,5 @@ class TaskDescriptor:
     batch_size: int = 100
     n_epochs: int = 10
     n_dim_hidden: int = 100
-    is_online: bool = False
+    sequential: bool = False
 

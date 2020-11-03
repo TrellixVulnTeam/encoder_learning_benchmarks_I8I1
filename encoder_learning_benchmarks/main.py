@@ -344,8 +344,8 @@ def child_process_task(args, task_hash, task):
     benchmark_kwargs = {
         **classes_dict,
         "rng": rng,
-        "batch_size": (1 if task.is_online else task.batch_size),
-        "sequential": task.is_online,
+        "batch_size": task.batch_size,
+        "sequential": task.sequential,
         "n_epochs": task.n_epochs,
         "compute_test_error": True,
         "progress": benchmark.print_json_progress,
@@ -448,7 +448,6 @@ def main_parent():
     with open(os.path.join(args.tar, "manifest.json"), 'w') as f:
         json.dump(
             {
-                "time": time.time(),
                 "tasks": {
                     task_hash: dataclasses.asdict(task)
                     for task_hash, task in tasks.items()
