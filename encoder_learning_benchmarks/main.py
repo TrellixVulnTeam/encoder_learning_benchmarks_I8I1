@@ -357,9 +357,8 @@ def child_process_task(args, task_hash, task):
 
     # Create the output file. Write to a temporary file first, then move that
     # file to the target.
-    outfile = os.path.join(
-        args.tar, "encoder_learning_benchmarks_{}.h5".format(task_hash))
-    tmpfile = "." + outfile + ".tmp"
+    tmpfile = os.path.join(
+        args.tar, ".encoder_learning_benchmarks_{}.tmp".format(task_hash))
     with h5py.File(tmpfile, 'w') as f:
         # Store the task configuration
         f.attrs["task"] = json.dumps(task_dict)
@@ -368,7 +367,11 @@ def child_process_task(args, task_hash, task):
         for key, value in benchmark_result.items():
             f.create_dataset(key, data=value)
 
-    # This is an atomic operation on POSIX systems
+    # Moving is an atomic operation on POSIX systems. This ensures that only
+    # completed benchmarks are counted as completed, even if the process is
+    # interrupted while saving.
+    outfile = os.path.join(
+        args.tar, "encoder_learning_benchmarks_{}.h5".format(task_hash))
     os.rename(tmpfile, outfile)
 
 
