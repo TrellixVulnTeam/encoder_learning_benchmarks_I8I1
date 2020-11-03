@@ -460,11 +460,16 @@ def main_parent():
             indent=4,
             sort_keys=True)
 
+    # Deterministically shuffle the items. This ensures that each node in a
+    # compute cluster gets approximately the same kind of workload.
+    tasks_list = list(enumerate(tasks.items()))
+    np.random.RandomState(582781).shuffle(tasks_list)
+
     # Extract the selected partitions
     part_bnds = np.linspace(0, len(tasks), args.n_partitions + 1, dtype=np.int)
     part_ptr = 0
     tasks_sel = {}
-    for i, (key, value) in enumerate(tasks.items()):
+    for i, (key, value) in enumerate(tasks_list):
         if (i >= part_bnds[part_ptr]) and (i < part_bnds[part_ptr + 1]):
             if (part_ptr + 1) in args.partitions:
                 tasks_sel[key] = value
