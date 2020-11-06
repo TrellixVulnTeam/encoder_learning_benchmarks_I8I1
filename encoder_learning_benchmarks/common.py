@@ -811,7 +811,7 @@ class TaskDescriptor:
     encoder_learner_params: dict = dataclasses.field(default_factory=dict)
     seed: int = 0
     batch_size: int = 100
-    n_epochs: int = 100
+    n_epochs: int = 200
     n_dim_hidden: int = 100
     sequential: bool = False
 
