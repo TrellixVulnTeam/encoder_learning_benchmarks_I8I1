@@ -110,6 +110,7 @@ def run_single_trial(optimizer,
 
     # Add the decoder to the parameter map
     params = {"D": D, **network.params}
+    params_initial = copy.deepcopy(params)
 
     # Initialize the individual dataset samples
     xs_trn, ys_trn, xs_val, ys_val, xs_test, ys_test = samples = [None] * 6
@@ -193,11 +194,15 @@ def run_single_trial(optimizer,
         ys_test_hat = network.activities(xs_test) @ D.T
         err_test = dataset.error(ys_test, ys_test_hat)
 
-    return {
+    # Assemble the result array
+    res = {
         "epochs": np.arange(1, n_epochs + 1),
         "n_epochs": n_epochs,
         "errs_training": errs_training,
         "errs_validation": errs_validation,
         "err_test": err_test,
     }
-
+    for param_key in params.keys():
+        res["p_initial_" + param_key] = params_initial[param_key]
+        res["p_final_" + param_key] = params[param_key]
+    return res
