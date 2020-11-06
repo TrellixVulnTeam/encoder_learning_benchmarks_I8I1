@@ -301,7 +301,7 @@ def child_process_task(args, task_hash, task):
             "optimizer_name", "dataset_name", "network_name",
             "decoder_learner_name", "encoder_learner_name"
     ]:
-        # Fetch the manifest corresponding to 
+        # Fetch the manifest corresponding to
         module_key = "_".join(key.split("_")[:-1]) + "s"
         class_key = "_".join(key.split("_")[:-1])
         params_key = class_key + "_params"
@@ -316,12 +316,13 @@ def child_process_task(args, task_hash, task):
 
         # Assemble the final component parameters; in particular, resolve "@ref"
         # references to classes defined in the manifest parameters
-        params = {
-            "rng": rng
-        }
+        params = {"rng": rng}
         for param_key, param_value in task_dict[params_key].items():
-            if isinstance(param_value, dict) and (len(param_value) == 1) and ("@ref" in param_value):
-                params[param_key] = manifest.params[param_key][param_value["@ref"]]
+            if isinstance(param_value, dict) and (len(param_value)
+                                                  == 1) and ("@ref"
+                                                             in param_value):
+                params[param_key] = manifest.params[param_key][
+                    param_value["@ref"]]
             else:
                 params[param_key] = param_value
 
@@ -393,6 +394,20 @@ def main_parent():
         default=1,
     )
     parser.add_argument(
+        "--allowlist",
+        help=
+        "Comma separated list of allowlisted modules to load. If empty, no whitelist is applied",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
+        "--ignorelist",
+        help=
+        "Comma separated list of ignorelisted modules. If empty, no ignorelist is applied.",
+        type=str,
+        default="",
+    )
+    parser.add_argument(
         "--n_partitions",
         help="Number of partitions the tasks should be divided into",
         type=int,
@@ -422,6 +437,10 @@ def main_parent():
         logger.error("n_repeat must be larger than zero")
         return 1
 
+    # Parse the ignorelist/allowlist information
+    ignorelist = sorted(filter(bool, map(lambda s: s.strip(), args.ignorelist.split(","))))
+    allowlist = sorted(filter(bool, map(lambda s: s.strip(), args.allowlist.split(","))))
+
     # Parse the partition information
     if not args.n_partitions > 0:
         logger.error("n_partitions must be larger than zero")
@@ -430,7 +449,8 @@ def main_parent():
         if args.partitions == "*":
             args.partitions = set(range(1, args.n_partitions + 1))
         else:
-            args.partitions = set(map(int, args.partitions.split(",")))
+            args.partitions = set(
+                map(lambda s: int(s.strip()), args.partitions.split(",")))
             for p in args.partitions:
                 if (p <= 0) or (p > args.n_partitions):
                     logger.error("Invalid partition index {}".format(p))
@@ -444,7 +464,9 @@ def main_parent():
 
     # Assemble all tasks
     logger.info("Collecting tasks...")
-    tasks = collector.collect_tasks(n_repeat=args.n_repeat)
+    modules = collector.collect_modules(ignorelist=ignorelist,
+                                        allowlist=allowlist)
+    tasks = collector.collect_tasks(modules, n_repeat=args.n_repeat)
 
     # Write the task hashes to a manifest file in the target directory. This way
     # we'll always know which files belong to the most recent experiment run.
@@ -468,7 +490,10 @@ def main_parent():
     np.random.RandomState(582781).shuffle(tasks_list)
 
     # Extract the selected partitions
-    part_bnds = np.linspace(0, len(tasks_list), args.n_partitions + 1, dtype=np.int)
+    part_bnds = np.linspace(0,
+                            len(tasks_list),
+                            args.n_partitions + 1,
+                            dtype=np.int)
     part_ptr = 0
     tasks_sel = {}
     for i, (key, value) in enumerate(tasks_list):

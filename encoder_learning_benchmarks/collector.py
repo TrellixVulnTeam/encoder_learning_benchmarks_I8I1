@@ -39,36 +39,78 @@ def _collect_submodules(module):
 _MODULES = {}
 
 
-def collect_modules():
+def collect_modules(ignorelist=None, allowlist=None):
     """
     Returns a map containing all datasets, networks, optimizers and learning
     rules (split into encoder and decoder learning rules).
     """
+
+    # Pre-process the ignorelist and allowlist
+    def mkset(it):
+        if ((it is None) or (len(it) == 0)):
+            return None
+        return set(s.lower() for s in it)
+
+    ignorelist = mkset(ignorelist)
+    allowlist = mkset(allowlist)
+    if (not ignorelist is None) and (not allowlist is None):
+        raise RuntimeError(
+            "Cannot specify both an ignorelist and an allow list")
+
     # Use the cached modules if available
-    if len(_MODULES) > 0:
-        return _MODULES
+    if len(_MODULES) == 0:
+        # First collect all submodules
+        modules = sorted([
+            *_collect_submodules(datasets), *_collect_submodules(networks),
+            *_collect_submodules(optimizers), *_collect_submodules(rules)
+        ],
+                         key=lambda m: m.manifest.name)
 
-    # First collect all submodules
-    modules = sorted([
-        *_collect_submodules(datasets), *_collect_submodules(networks),
-        *_collect_submodules(optimizers), *_collect_submodules(rules)
-    ],
-                     key=lambda m: m.manifest.name)
+        # Then sort them into the corresponding categories depending on the manifest
+        # type
+        def filter(manifest_type):
+            return {
+                m.manifest.name: m.manifest
+                for m in modules if isinstance(m.manifest, manifest_type)
+            }
 
-    # Then sort them into the corresponding categories depending on the manifest
-    # type
-    def filter(manifest_type):
-        return {
-            m.manifest.name: m.manifest
-            for m in modules if isinstance(m.manifest, manifest_type)
-        }
+        _MODULES["datasets"] = filter(DatasetManifest)
+        _MODULES["networks"] = filter(NetworkManifest)
+        _MODULES["optimizers"] = filter(OptimizerManifest)
+        _MODULES["decoder_learners"] = filter(DecoderLearningRuleManifest)
+        _MODULES["encoder_learners"] = filter(EncoderLearningRuleManifest)
 
-    _MODULES["datasets"] = filter(DatasetManifest)
-    _MODULES["networks"] = filter(NetworkManifest)
-    _MODULES["optimizers"] = filter(OptimizerManifest)
-    _MODULES["decoder_learners"] = filter(DecoderLearningRuleManifest)
-    _MODULES["encoder_learners"] = filter(EncoderLearningRuleManifest)
-    return _MODULES
+    # Filter the modules according to the allowlist/ignorelist
+    res = {}
+    used_xlist_keys = set()
+    for d_key, d_value in _MODULES.items():
+        d_res = {}
+        for key, value in d_value.items():
+            if not (allowlist is None):
+                if not key.lower() in allowlist:
+                    continue
+                else:
+                    used_xlist_keys.add(key.lower())
+            if not (ignorelist is None):
+                if key.lower() in ignorelist:
+                    used_xlist_keys.add(key.lower())
+                    continue
+            d_res[key] = value
+        res[d_key] = d_res
+
+    # Make sure all allowlist/ignorelist keys actually corresponded to a module
+    def check_xlist_keys(lst):
+        if not lst is None:
+            for key in lst:
+                if not key in used_xlist_keys:
+                    raise RuntimeError(
+                        "Allowlist or ignorelist entry \"{}\" is not a valid module!".
+                        format(key))
+
+    check_xlist_keys(ignorelist)
+    check_xlist_keys(allowlist)
+
+    return res
 
 
 _FILE_HASHES = {}
@@ -272,15 +314,12 @@ def _collect_tasks_for_setup(tasks, n_repeat, method, optimizer, dataset,
             tasks[compute_task_hash(t)] = t
 
 
-def collect_tasks(n_repeat=1):
+def collect_tasks(modules, n_repeat=1):
     """
     Creates a list of tasks combining the different datasets, networks,
     optimizers, decoder_learning_rules and encoder_learning_rules, as well as
     overall methodologies (online vs. offline learning).
     """
-    # Collect all modules
-    modules = collect_modules()
-
     tasks = {}
     for method in ["offline", "online"]:
         for dataset in modules["datasets"].values():
@@ -295,13 +334,14 @@ def collect_tasks(n_repeat=1):
                             if (not enclrn is None) and (
                                     not enclrn.supported_network_classes is
                                     None):
-                                if not (network.ctor in
-                                        enclrn.supported_network_classes):
+                                if not (network.ctor
+                                        in enclrn.supported_network_classes):
                                     continue
 
                             # XXX Temporarily turn of online learning when using
                             # MNIST (really slow)
-                            if (dataset.name == "mnist") and (method == "online"):
+                            if (dataset.name == "mnist") and (method
+                                                              == "online"):
                                 continue
 
                             _collect_tasks_for_setup(tasks, n_repeat, method,
