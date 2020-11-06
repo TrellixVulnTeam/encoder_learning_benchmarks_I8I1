@@ -18,4 +18,3 @@
 from . import benchmark
 from . import collector
 from . import common
-from . import hilbertcurve

@@ -17,9 +17,12 @@
 
 import copy
 import dataclasses
+import math
 import numpy as np
 import scipy.signal
 import scipy.linalg
+
+from .hilbertcurve import HilbertCurve
 
 ###############################################################################
 # Useful functions                                                            #
@@ -104,6 +107,52 @@ class FilteredGaussianSignal:
                                                            xs[:, i],
                                                            zi=self.zi[:, i])
         return ys
+
+
+###############################################################################
+# Hilbert Curve Points Generator                                              #
+###############################################################################
+
+
+def generate_hilbert_curve_points(n_dim=2, n_pnts_tar_log2=16, aabb=None):
+    # Make sure the given arguments are sane
+    assert n_dim > 0
+    assert n_pnts_tar_log2 > 1
+
+    # Make sure the AABB has the right shape
+    if aabb is None:
+        aabb = np.array((-np.ones(n_dim), np.ones(n_dim)))
+    aabb = np.asarray(aabb)
+    assert aabb.ndim == 2
+    assert aabb.shape[0] == 2
+    assert aabb.shape[1] == n_dim
+
+    # Determine the order of the hilbert curve. We would like about
+    # 100,000 points to sample from, since this is the epoch size.
+    # The number of points on the Hilbert curve is given as n = 2**(p*N),
+    # where p is the order and N is the number of dimensions.
+    n_pnts_tar = 2**n_pnts_tar_log2
+    p = int(math.ceil(math.log2(n_pnts_tar) / n_dim))
+    n_pnts = 2**(n_dim * p)
+
+    # Create the hilbert curve object and sample all points
+    hc = HilbertCurve(p, n_dim)
+    hilbert_curve_pnts = np.zeros((n_pnts, n_dim))
+    for i in range(n_pnts):
+        hilbert_curve_pnts[i] = hc.coordinates_from_distance(i)
+
+    # Scale the hilbert curve to fit into the AABB
+    range_ = ((aabb[1] - aabb[0]))
+    offs = aabb[0]
+    hilbert_curve_pnts = hilbert_curve_pnts / ((2**p) - 1)
+    hilbert_curve_pnts *= range_[None, :]
+    hilbert_curve_pnts += offs[None, :]
+
+    # Remember the scaling factors
+    hilbert_curve_scale = np.ones(n_dim) / ((2**p) - 1)
+    hilbert_curve_scale *= range_
+
+    return hilbert_curve_pnts, hilbert_curve_scale
 
 
 ###############################################################################
@@ -742,6 +791,7 @@ class OptimizerManifest(Manifest):
 ###############################################################################
 # Task descriptor                                                             #
 ###############################################################################
+
 
 @dataclasses.dataclass
 class TaskDescriptor:

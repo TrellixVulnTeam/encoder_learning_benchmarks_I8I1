@@ -62,21 +62,6 @@ class GaussianClusters(ClassificationDataset):
 
         # Pre-compute a Hilbert curve when doing biased sampling
         if self.biased:
-            # Determine the order of the hilbert curve. We would like about
-            # 100,000 points to sample from, since this is the epoch size.
-            # The number of points on the Hilbert curve is given as n = 2**(p*N), 
-            # where p is the order and N is the number of dimensions.
-            n_pnts_tar = 131072  # (2**17)
-            p = int(math.ceil(math.log2(n_pnts_tar) / n_dim))
-            self.hilbert_curve_order = p
-            n_pnts = 2**(n_dim * p)
-
-            # Create the hilbert curve object and sample all points
-            hc = HilbertCurve(p, n_dim)
-            self.hilbert_curve_pnts = np.zeros((n_pnts, n_dim))
-            for i in range(n_pnts):
-                self.hilbert_curve_pnts[i] = hc.coordinates_from_distance(i)
-
             # Compute the axis-aligned bounding-box (AABB) to which we should scale
             # the hilbert curve
             p_min = 1e-4
@@ -91,25 +76,20 @@ class GaussianClusters(ClassificationDataset):
                         maxs = np.maximum(maxs, vec + self.mus[i])
             self.aabb = np.array((mins, maxs))
 
-            # Scale the hilbert curve to fit into the AABB
-            scale = ((self.aabb[1] - self.aabb[0]))
-            offs = self.aabb[0]
-            self.hilbert_curve_pnts = self.hilbert_curve_pnts / ((2**p) - 1)
-            self.hilbert_curve_pnts *= scale[None, :]
-            self.hilbert_curve_pnts += offs[None, :]
+            # Generate the hilber curve points scaled to the given extents
+            self.hilbert_curve_pnts, self.hilbert_curve_scale = \
+                generate_hilbert_curve_points(n_dim, 17, self.aabb)
 
-            # Remember the scaling factors
-            self.hilbert_curve_scale = np.ones(self.n_dim) / ((2**p) - 1)
-            self.hilbert_curve_scale *= scale
-
-            # Current position along the Hilbert curve
+            # Position along the hilbert curve
             self.hilbert_curve_offs = 0
 
-        # Rember some internal values for debugging
+        # Remember some internal values for debugging
         self.Qs = Qs
         self.scales = scales
 
-        return DatasetDescriptor(n_dim_in=n_dim, n_dim_out=n_classes, is_time_continous=self.biased)
+        return DatasetDescriptor(n_dim_in=n_dim,
+                                 n_dim_out=n_classes,
+                                 is_time_continous=self.biased)
 
     def pdf(self, pnts):
         # Make sure the given array has the right shape
@@ -166,32 +146,35 @@ class GaussianClusters(ClassificationDataset):
         # Shift the hilbert curve according to the last offset
         n_pnts = self.hilbert_curve_pnts.shape[0]
         shift = self.rng.randint(n_pnts)
-        pnts = np.roll(self.hilbert_curve_pnts, -self.hilbert_curve_offs, axis=0)
+        pnts = np.roll(self.hilbert_curve_pnts,
+                       -self.hilbert_curve_offs,
+                       axis=0)
         last_idx = 0
 
         while ptr < n_smpls:
             # Add some uniform noise to the Hilbert curve points
             noise = self.rng.uniform(-1, 1, (n_pnts, self.n_dim))
-            noise *= self.hilbert_curve_scale[None, :] # Correct scale
+            noise *= self.hilbert_curve_scale[None, :]  # Correct scale
             pnts += noise
 
             # Sample the PDFs at each of the points
             P = self.pdf(pnts)
-            pdf = np.sum(P, axis=1) # sum accross all classes
+            pdf = np.sum(P, axis=1)  # sum accross all classes
 
             # Randomly select the points based on the pdf
             ps = self.rng.uniform(0, np.max(pdf), n_pnts)
             sel = pdf >= ps
             n_sel_total = np.sum(sel)
             n_sel = min(n_smpls - ptr, n_sel_total)
-            xs[ptr:(ptr+n_sel)] = pnts[sel][:n_sel]
+            xs[ptr:(ptr + n_sel)] = pnts[sel][:n_sel]
 
             # Randomly assign a class to each of the points. We're using the
             # "Gumbel max" trick here. See
             # https://timvieira.github.io/blog/post/2019/09/16/algorithms-for-sampling-without-replacement/
             P = P[sel][:n_sel]
-            cls = np.argmax(np.log(P + 1e-16) + self.rng.gumbel(0, 1, P.shape), axis=1)
-            ys[np.arange(ptr, ptr+n_sel), cls] = True
+            cls = np.argmax(np.log(P + 1e-16) + self.rng.gumbel(0, 1, P.shape),
+                            axis=1)
+            ys[np.arange(ptr, ptr + n_sel), cls] = True
 
             # Remember the index of the last selected point
             sel_cumsum = np.cumsum(np.asarray(sel, np.int))
@@ -212,6 +195,7 @@ class GaussianClusters(ClassificationDataset):
         else:
             return self._do_sample_biased(n_smpls)
 
+
 def select_gaussian_clusters_biased(task_descr):
     """
     This function selects the "biased" parameter based on the given trial
@@ -220,10 +204,14 @@ def select_gaussian_clusters_biased(task_descr):
     """
     return task_descr.sequential
 
+
 manifest = DatasetManifest(name="gaussian_clusters",
                            ctor=GaussianClusters,
                            params={
-                            "n_classes": [2, 4, 8],
-                            "n_dim": [2,],
-                            "biased": select_gaussian_clusters_biased})
+                               "n_classes": [2, 4, 8],
+                               "n_dim": [
+                                   2,
+                               ],
+                               "biased": select_gaussian_clusters_biased
+                           })
 
