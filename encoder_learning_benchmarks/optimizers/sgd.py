@@ -32,6 +32,8 @@ def sgd_select_eta(trial_descr):
     descriptor. We need to do this because the SGD rule is very sensitive to
     factors such as the dataset size.
     """
+    if trial_descr.dataset_name == "multiplication":
+        return 1e-1
     return 1e-4
 
 manifest = OptimizerManifest(name="sgd", ctor=SGD, params={
