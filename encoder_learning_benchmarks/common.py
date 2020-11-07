@@ -33,7 +33,7 @@ def nts(T, dt=1e-3):
     return int(T / dt + 1e-9)
 
 
-def mkrng(rng=np.random):
+def mkrng(rng):
     """
     Derives a new random number generator from the given random number
     generator.
@@ -69,7 +69,7 @@ class FilteredGaussianSignal:
         # Derive a new random number generator from the given rng. This ensures
         # that the signal will always be the same for a given random state,
         # independent of other
-        self.rng = mkrng(rng)
+        self._rng = mkrng(rng)
 
         # Build the Butterworth filter
         if freq_low is None:
@@ -107,6 +107,10 @@ class FilteredGaussianSignal:
                                                            xs[:, i],
                                                            zi=self.zi[:, i])
         return ys
+
+    @property
+    def rng(self):
+        return self._rng
 
 
 ###############################################################################
@@ -610,7 +614,7 @@ class DecoderLearningRule:
 
     @property
     def rng(self):
-        return rng
+        return self._rng
 
     @property
     def n_dim_hidden(self):
@@ -680,7 +684,7 @@ class EncoderLearningRule:
 
     @property
     def rng(self):
-        return rng
+        return self._rng
 
     @property
     def n_dim_in(self):

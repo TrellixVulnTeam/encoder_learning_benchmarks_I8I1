@@ -21,7 +21,7 @@ from ..common import *
 class FeedbackAlignment(EncoderLearningRule):
     def do_init(self):
         # Generate the random feedback-alignment matrix
-        self.F = np.random.normal(0, 1, (self.n_dim_out, self.n_dim_hidden))
+        self.F = self.rng.normal(0, 1, (self.n_dim_out, self.n_dim_hidden))
         self.F /= np.linalg.norm(self.F, axis=0)
 
     def do_step(self, As, xs, errs, _, net):
