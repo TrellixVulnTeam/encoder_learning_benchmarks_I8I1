@@ -115,84 +115,95 @@ def run_single_trial(optimizer,
     # Initialize the individual dataset samples
     xs_trn, ys_trn, xs_val, ys_val, xs_test, ys_test = samples = [None] * 6
 
-    # Iterate over all epochs
-    for i_epoch in range(n_epochs):
-        # If this is the first epoch or the dataset is infinite, sample new
-        # data. Note that we will not override the test and validation set
-        # (this is the purpose of the "merge" defined function above).
-        first_epoch = i_epoch == 0
-        if (i_epoch == 0) or (not dataset.is_finite):
-            xs_trn, ys_trn, xs_val, ys_val, xs_test, ys_test = merge(
-                samples, sample(first_epoch, compute_test_error
-                                and first_epoch))
+    # Iterate over all epochs.
+    old_errs_settings = np.seterr(all="raise")
+    try:
+        for i_epoch in range(n_epochs):
+            # If this is the first epoch or the dataset is infinite, sample new
+            # data. Note that we will not override the test and validation set
+            # (this is the purpose of the "merge" defined function above).
+            first_epoch = i_epoch == 0
+            if (i_epoch == 0) or (not dataset.is_finite):
+                xs_trn, ys_trn, xs_val, ys_val, xs_test, ys_test = merge(
+                    samples, sample(first_epoch, compute_test_error
+                                    and first_epoch))
 
-        # If the decoder learner does not support mini batches, update the
-        # decoders in a single step at the beginning of the epoch. This is
-        # mostly for the LSTSQ solver.
-        if (i_epoch == 0) and (not decoder_learner.returns_gradient):
-            As = network.activities(xs_trn)
-            errs = ys_trn - As @ D.T
-            D[...] = decoder_learner.step(As, ys_trn, errs, D)
+            # If the decoder learner does not support mini batches, update the
+            # decoders in a single step at the beginning of the epoch. This is
+            # mostly for the LSTSQ solver.
+            if (i_epoch == 0) and (not decoder_learner.returns_gradient):
+                As = network.activities(xs_trn)
+                errs = ys_trn - As @ D.T
+                D[...] = decoder_learner.step(As, ys_trn, errs, D)
 
-        # Generate the batch indices
-        if (not encoder_learner is None) or decoder_learner.returns_gradient:
-            n_batches = epoch_size // batch_size
-            batch_idcs = np.arange(n_batches * batch_size)
-            if not sequential: # Do not shuffle if the samples are in a sequence
-                rng.shuffle(batch_idcs)
-            batch_idcs = batch_idcs.reshape(n_batches, batch_size)
-        else:
-            # If we neither have an encoder learner, nor does our decoder
-            # learner support mini batches, just go to the next epoch.
-            n_batches = 0
+            # Generate the batch indices
+            if (not encoder_learner is None) or decoder_learner.returns_gradient:
+                n_batches = epoch_size // batch_size
+                batch_idcs = np.arange(n_batches * batch_size)
+                if not sequential: # Do not shuffle if the samples are in a sequence
+                    rng.shuffle(batch_idcs)
+                batch_idcs = batch_idcs.reshape(n_batches, batch_size)
+            else:
+                # If we neither have an encoder learner, nor does our decoder
+                # learner support mini batches, just go to the next epoch.
+                n_batches = 0
 
-        # Iterate over all mini-batches
-        for i_batch in range(n_batches):
-            # Fetch the training data for this batch
-            idcs = batch_idcs[i_batch]
-            xs_trn_batch, ys_trn_batch = xs_trn[idcs], ys_trn[idcs]
+            # Iterate over all mini-batches
+            for i_batch in range(n_batches):
+                # Fetch the training data for this batch
+                idcs = batch_idcs[i_batch]
+                xs_trn_batch, ys_trn_batch = xs_trn[idcs], ys_trn[idcs]
 
-            # Compute the activities of the network for the given input
-            As = network.activities(xs_trn_batch)
-            errs = As @ D.T - ys_trn_batch
+                # Compute the activities of the network for the given input
+                As = network.activities(xs_trn_batch)
+                errs = As @ D.T - ys_trn_batch
 
-            # Update the decoder
-            dparams = {}
-            if decoder_learner.returns_gradient:
-                dparams["D"] = decoder_learner.step(As, ys_trn_batch, errs, D)
+                # Update the decoder
+                dparams = {}
+                if decoder_learner.returns_gradient:
+                    dparams["D"] = decoder_learner.step(As, ys_trn_batch, errs, D)
 
-            # Update the network parameters
-            if not encoder_learner is None:
-                dparams.update(encoder_learner.step(As, xs_trn_batch, errs, D, network))
+                # Update the network parameters
+                if not encoder_learner is None:
+                    dparams.update(encoder_learner.step(As, xs_trn_batch, errs, D, network))
 
-            # Update the parameters
-            optimizer.step(params, dparams)
+                # Update the parameters
+                optimizer.step(params, dparams)
 
-            # Normalise the network parameters
-            network.normalize_params()
+                # Normalise the network parameters
+                network.normalize_params()
 
-        # If the decoder was not updated in lockstep with the encoders, update
-        # the decoders before computing the final epoch error
-        if (not decoder_learner.returns_gradient) and (not encoder_learner is None):
-            As = network.activities(xs_trn)
-            errs = ys_trn - As @ D.T
-            D[...] = decoder_learner.step(As, ys_trn, errs, D)
+            # If the decoder was not updated in lockstep with the encoders, update
+            # the decoders before computing the final epoch error
+            if (not decoder_learner.returns_gradient) and (not encoder_learner is None):
+                As = network.activities(xs_trn)
+                errs = ys_trn - As @ D.T
+                D[...] = decoder_learner.step(As, ys_trn, errs, D)
 
-        # Compute the validation and training error after the update
-        ys_trn_hat = network.activities(xs_trn) @ D.T
-        ys_val_hat = network.activities(xs_val) @ D.T
-        errs_training[i_epoch] = dataset.error(ys_trn, ys_trn_hat)
-        errs_validation[i_epoch] = dataset.error(ys_val, ys_val_hat)
+            # Compute the validation and training error after the update
+            ys_trn_hat = network.activities(xs_trn) @ D.T
+            ys_val_hat = network.activities(xs_val) @ D.T
+            errs_training[i_epoch] = dataset.error(ys_trn, ys_trn_hat)
+            errs_validation[i_epoch] = dataset.error(ys_val, ys_val_hat)
 
-        if not progress is None:
-            progress(i_epoch + 1, n_epochs, errs_training[i_epoch],
-                     errs_validation[i_epoch])
+            if not progress is None:
+                progress(i_epoch + 1, n_epochs, errs_training[i_epoch],
+                         errs_validation[i_epoch])
 
-    # If so desired, compute the test error
-    err_test = None
-    if compute_test_error:
-        ys_test_hat = network.activities(xs_test) @ D.T
-        err_test = dataset.error(ys_test, ys_test_hat)
+        # If so desired, compute the test error
+        err_test = None
+        if compute_test_error:
+            ys_test_hat = network.activities(xs_test) @ D.T
+            err_test = dataset.error(ys_test, ys_test_hat)
+
+    except FloatingPointError or np.linalg.LinAlgError:
+        # Something broke. Write NaN values to the result files to indicate
+        # this.
+        errs_training[i_epoch:] = np.nan
+        errs_validation[i_epoch] = np.nan
+        err_test = np.nan
+    finally:
+        np.seterr(**old_errs_settings)
 
     # Assemble the result array
     res = {
