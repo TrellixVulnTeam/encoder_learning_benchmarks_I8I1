@@ -321,7 +321,8 @@ def collect_tasks(modules, n_repeat=1):
     overall methodologies (online vs. offline learning).
     """
     tasks = {}
-    for method in ["offline", "online"]:
+#    for method in ["offline", "online"]:
+    for method in ["offline"]:
         for dataset in modules["datasets"].values():
             for network in modules["networks"].values():
                 for declrn in modules["decoder_learners"].values():
