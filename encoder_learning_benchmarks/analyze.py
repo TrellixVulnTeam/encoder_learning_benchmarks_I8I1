@@ -69,6 +69,7 @@ LABELS = {
         "sgd": "SGD",
         "adam": "Adam",
     },
+    "seed": SkipLabel,
 }
 
 COLOURS = {
@@ -542,6 +543,8 @@ def eval_dictionary(descr, sources, dictionary):
                 mapped_value = dictionary[source][source_value]
             elif callable(dictionary[source]):
                 mapped_value = dictionary[source](source_value)
+            else:
+                mapped_value = dictionary[source]
         mapped_data.append((source, source_value, mapped_value))
     return list(filter(lambda x: not x[2] is SkipLabel, mapped_data))
 
