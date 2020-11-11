@@ -27,10 +27,12 @@ def print_progress(i_epoch, n_epochs, err_training, err_validation):
     if i_epoch == n_epochs:
         sys.stdout.write("\n")
 
+
 def print_json_progress(i_epoch, n_epochs, err_training, err_validation):
     fmt_str = '{{"type": "progress", "i": {}, "n": {}}}\n'
     sys.stdout.write(fmt_str.format(i_epoch, n_epochs))
     sys.stdout.flush()
+
 
 def run_single_trial(optimizer,
                      dataset,
@@ -116,7 +118,12 @@ def run_single_trial(optimizer,
     xs_trn, ys_trn, xs_val, ys_val, xs_test, ys_test = samples = [None] * 6
 
     # Iterate over all epochs.
-    old_errs_settings = np.seterr(all="raise")
+    old_errs_settings = np.seterr(**{
+        'divide': 'raise',
+        'over': 'raise',
+        'under': 'ignore',
+        'invalid': 'raise'
+    })
     try:
         for i_epoch in range(n_epochs):
             # If this is the first epoch or the dataset is infinite, sample new
@@ -125,8 +132,8 @@ def run_single_trial(optimizer,
             first_epoch = i_epoch == 0
             if (i_epoch == 0) or (not dataset.is_finite):
                 xs_trn, ys_trn, xs_val, ys_val, xs_test, ys_test = merge(
-                    samples, sample(first_epoch, compute_test_error
-                                    and first_epoch))
+                    samples,
+                    sample(first_epoch, compute_test_error and first_epoch))
 
             # If the decoder learner does not support mini batches, update the
             # decoders in a single step at the beginning of the epoch. This is
@@ -137,10 +144,11 @@ def run_single_trial(optimizer,
                 D[...] = decoder_learner.step(As, ys_trn, errs, D)
 
             # Generate the batch indices
-            if (not encoder_learner is None) or decoder_learner.returns_gradient:
+            if (not encoder_learner is None
+                ) or decoder_learner.returns_gradient:
                 n_batches = epoch_size // batch_size
                 batch_idcs = np.arange(n_batches * batch_size)
-                if not sequential: # Do not shuffle if the samples are in a sequence
+                if not sequential:  # Do not shuffle if the samples are in a sequence
                     rng.shuffle(batch_idcs)
                 batch_idcs = batch_idcs.reshape(n_batches, batch_size)
             else:
@@ -161,11 +169,14 @@ def run_single_trial(optimizer,
                 # Update the decoder
                 dparams = {}
                 if decoder_learner.returns_gradient:
-                    dparams["D"] = decoder_learner.step(As, ys_trn_batch, errs, D)
+                    dparams["D"] = decoder_learner.step(
+                        As, ys_trn_batch, errs, D)
 
                 # Update the network parameters
                 if not encoder_learner is None:
-                    dparams.update(encoder_learner.step(As, xs_trn_batch, errs, D, network))
+                    dparams.update(
+                        encoder_learner.step(As, xs_trn_batch, errs, D,
+                                             network))
 
                 # Update the parameters
                 optimizer.step(params, dparams)
@@ -175,7 +186,8 @@ def run_single_trial(optimizer,
 
             # If the decoder was not updated in lockstep with the encoders, update
             # the decoders before computing the final epoch error
-            if (not decoder_learner.returns_gradient) and (not encoder_learner is None):
+            if (not decoder_learner.returns_gradient) and (
+                    not encoder_learner is None):
                 As = network.activities(xs_trn)
                 errs = ys_trn - As @ D.T
                 D[...] = decoder_learner.step(As, ys_trn, errs, D)
@@ -196,7 +208,7 @@ def run_single_trial(optimizer,
             ys_test_hat = network.activities(xs_test) @ D.T
             err_test = dataset.error(ys_test, ys_test_hat)
 
-    except FloatingPointError or np.linalg.LinAlgError:
+    except (FloatingPointError, np.linalg.LinAlgError) as e:
         # Something broke. Write NaN values to the result files to indicate
         # this.
         errs_training[i_epoch:] = np.nan
@@ -217,3 +229,4 @@ def run_single_trial(optimizer,
         res["p_initial_" + param_key] = params_initial[param_key]
         res["p_final_" + param_key] = params[param_key]
     return res
+
