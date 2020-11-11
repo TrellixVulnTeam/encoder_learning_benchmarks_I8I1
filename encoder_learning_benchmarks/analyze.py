@@ -23,6 +23,9 @@ import os
 import sys
 import tqdm
 import matplotlib.cm as cm
+import tarfile
+import tempfile
+
 
 SkipLabel = object()
 """
@@ -62,6 +65,10 @@ LABELS = {
         "normal": "Gaussian initialisation",
         "nef": "NEF initialisation",
     },
+    "optimizer/#name": {
+        "sgd": "SGD",
+        "adam": "Adam",
+    },
 }
 
 COLOURS = {
@@ -98,27 +105,74 @@ DATASET_ERROR_TYPES = {
 ERROR_TYPES = {
     None: "Average normalised error",
     "nrmse": "NRMSE",
-    "error_rate": "Classification error rate",
+    "error_rate": "Error rate",
 }
 
 
-def load_benchmark_data(tar):
-    """
-    Loads the benchmark data from the given target directory.
-    """
+def _load_single_benchmark_file(f, task_descr):
+    with h5py.File(f, 'r') as f:
+        # Make sure the task descriptor loaded from the manifest matches
+        # what is stored
+        task_descr_rec = json.loads(f.attrs["task"])
+        if task_descr_rec != task_descr:
+            raise RuntimeError("Cannot validate task descriptor")
 
-    # Make sure that the target directory exists
-    if not os.path.isdir(tar):
-        raise RuntimeError(
-            "Specified target directory does not exist or is not a directory")
+        # For descriptor keys starting with one of these prefixes, the
+        # "*_name" is merged into the "*_params" dictionary
+        special_prefix = {
+            "optimizer", "dataset", "network", "encoder_learner",
+            "decoder_learner"
+        }
 
-    # Load the manifest file and make sure that it is valid
-    manifest_file = os.path.join(tar, "manifest.json")
-    if not os.path.isfile(manifest_file):
-        raise RuntimeError(
-            "Could not find manifest file in the specified target directory")
-    with open(manifest_file, 'r') as f:
-        manifest = json.load(f)
+        task_descr_new = {}
+        for descr_key, descr_value in task_descr.items():
+            # Eliminate the "@ref" objects from the descriptor
+            if isinstance(descr_value, dict):
+                descr_value = {**descr_value}
+                for param_key, param_value in descr_value.items():
+                    if (isinstance(param_value, dict)
+                            and (len(param_value) == 1)
+                            and ("@ref" in param_value)):
+                        descr_value[param_key] = param_value["@ref"]
+
+            # Handle the merging of _name into _params
+            descr_key_prefix = "_".join(descr_key.split("_")[:-1])
+            if descr_key_prefix in special_prefix:
+                if descr_key.endswith("_name"):
+                    continue
+                descr_key = descr_key_prefix
+                descr_value["#name"] = task_descr[descr_key_prefix + "_name"]
+
+            task_descr_new[descr_key] = descr_value
+
+        # Load the reconstruction errors from the h5 file
+        return {
+            "descr": task_descr_new,
+            "err_test": f["err_test"][()],
+            "errs_training": f["errs_training"][()],
+            "errs_validation": f["errs_validation"][()],
+        }
+
+
+def _load_benchmark_data_dir(dir):
+    # Potentially find the manifest in a nested subdirectory
+    manifest, file_list = None, set()
+    for root, _, files in os.walk(dir):
+        for file in files:
+            fn = os.path.join(root, file)
+            file_list.add(fn)
+            if file == "manifest.json":
+                if not manifest is None:
+                    raise RuntimeError("Multiple manifest files")
+                dir = root
+                with open(fn, "r") as f:
+                    manifest = json.load(f)
+
+    # Make sure that we actually found the manifest
+    if manifest is None:
+        raise RuntimeError("Could not find manifest file")
+
+    # Make sure that the manifest is valid
     if not (("tasks" in manifest) and (isinstance(manifest["tasks"], dict))):
         raise RuntimeError("Invalid manifest file.")
 
@@ -128,63 +182,27 @@ def load_benchmark_data(tar):
     n_tasks_total = len(manifest["tasks"])
     for task_idx, (task_hash,
                    task_descr) in enumerate(manifest["tasks"].items()):
-        # Skip the file if it does not exist
-        task_filename = os.path.join(
-            tar, "encoder_learning_benchmarks_{}.h5".format(task_hash))
-        if not os.path.isfile(task_filename):
-            not_found.append(task_filename)
+        # Determine possible task filenames
+        task_filename_suffix = "encoder_learning_benchmarks_{}.h5".format(
+            task_hash)
+        task_filenames = [
+            os.path.join(dir, task_hash[0:2], task_filename_suffix),
+            os.path.join(dir, task_filename_suffix)
+        ]
+
+        # Search for the file
+        task_filename = None
+        for fn in task_filenames:
+            if fn in file_list:
+                task_filename = fn
+                break
+        if task_filename is None:
+            not_found.append(task_filename_suffix)
             continue
 
-        # The file exists, now process it
-        with h5py.File(task_filename, 'r') as f:
-            # Make sure the task descriptor loaded from the manifest matches
-            # what is stored
-            task_descr_rec = json.loads(f.attrs["task"])
-            if task_descr_rec != task_descr:
-                raise RuntimeError("Cannot validate task descriptor")
-
-            # For descriptor keys starting with one of these prefixes, the
-            # "*_name" is merged into the "*_params" dictionary
-            special_prefix = {
-                "optimizer", "dataset", "network", "encoder_learner",
-                "decoder_learner"
-            }
-
-            task_descr_new = {}
-            for descr_key, descr_value in task_descr.items():
-                # Eliminate the "@ref" objects from the descriptor
-                if isinstance(descr_value, dict):
-                    descr_value = {**descr_value}
-                    for param_key, param_value in descr_value.items():
-                        if (isinstance(param_value, dict)
-                                and (len(param_value) == 1)
-                                and ("@ref" in param_value)):
-                            descr_value[param_key] = param_value["@ref"]
-
-                # Handle the merging of _name into _params
-                descr_key_prefix = "_".join(descr_key.split("_")[:-1])
-                if descr_key_prefix in special_prefix:
-                    if descr_key.endswith("_name"):
-                        continue
-                    descr_key = descr_key_prefix
-                    descr_value["#name"] = task_descr[descr_key_prefix +
-                                                      "_name"]
-
-                task_descr_new[descr_key] = descr_value
-
-            # Load the reconstruction errors from the h5 file
-            task_data = {
-                "descr": task_descr_new,
-                "err_test": f["err_test"][()],
-                "errs_training": f["errs_training"][()],
-                "errs_validation": f["errs_validation"][()],
-            }
-
-            # Store the completely read task in the tasks dictionary. Turn the
-            # task hash into a tuple; when merging datasets. We'll use this
-            # to keep track of the original sources in merged datasets (i.e.,
-            # those merged accross multiple seeds).
-            tasks.append(((task_hash, ), task_data))
+        # Process the file
+        task_data = _load_single_benchmark_file(task_filename, task_descr)
+        tasks.append(((task_hash, ), task_data))
 
         # Print some informative messages
         if ((task_idx % 100) == 0) or (task_idx == (n_tasks_total - 1)):
@@ -197,6 +215,21 @@ def load_benchmark_data(tar):
             "\n".join(not_found)))
 
     return tasks
+
+
+def load_benchmark_data(tar):
+    """
+    Loads the benchmark data from the given target directory.
+    """
+    if os.path.isdir(tar):
+        return _load_benchmark_data_dir(tar)
+    elif os.path.isfile(tar) and ("tar" in tar.split(".")[-2:]):
+        with tempfile.TemporaryDirectory() as d, tarfile.open(tar) as ar:
+            sys.stderr.write("Extracting archive...")
+            sys.stderr.flush()
+            ar.extractall(d)
+            return _load_benchmark_data_dir(d)
+    raise RuntimeError("Target is neither a directory nor a tar archive")
 
 
 def merge_dicts(a, b, recursive=False):
@@ -226,13 +259,13 @@ def merge_dicts(a, b, recursive=False):
     return True
 
 
-def extract_parameter_sets(data):
+def extract_parameter_sets(data, merge=True):
     """
     Extracts parameters from the dataset that are actually changing.
     """
 
-    # Iterate over all dataset elements. Merge create lists of parameters that
-    # are actually changing.
+    # Iterate over all dataset elements. Create lists of values for each
+    # parameter
     sets = {}
     for _, task_data in data:
         descr = task_data["descr"]
@@ -276,9 +309,38 @@ def extract_parameter_sets(data):
             del dict_[k]
         return did_change
 
-    while cleanup(sets):
-        pass
+    if merge:
+        while cleanup(sets):
+            pass
 
+    return sets
+
+
+def remove_constants_from_parameter_sets(sets):
+    # Copy the sets before altering them
+    sets = copy.deepcopy(sets)
+    for param_key, param_value in sets.items():
+        # Collect all the individual parameters set in the parameter list
+        values_per_key = {}
+        for value in param_value:
+            if isinstance(value, dict):
+                for k, v in value.items():
+                    if not k in values_per_key:
+                        values_per_key[k] = set()
+                    values_per_key[k].add(v)
+
+        # Collect all the keys that should be deleted
+        keys_to_delete = []
+        for k, v in values_per_key.items():
+            if (len(v) <= 1) and (k != "#name"):
+                keys_to_delete.append(k)
+
+        # Delete the keys that should be deleted
+        for value in param_value:
+            if isinstance(value, dict):
+                for k in keys_to_delete:
+                    if k in value:
+                        del value[k]
     return sets
 
 
@@ -460,16 +522,7 @@ def compute_benchmark_data_info_sources(sets,
     return sources
 
 
-def compute_benchmark_data_info(data):
-    import matplotlib.colors
-
-    # Fetch the information sources from the dictionaries defined at the
-    # beginning of this file
-    sets = extract_parameter_sets(data)
-    label_sources = compute_benchmark_data_info_sources(sets, LABELS)
-    colour_sources = compute_benchmark_data_info_sources(sets, COLOURS, False)
-    marker_sources = compute_benchmark_data_info_sources(sets, MARKERS, False)
-
+def eval_dictionary(descr, sources, dictionary):
     def dpath(p, d):
         for q in p.split("/"):
             if isinstance(d, dict):
@@ -479,19 +532,50 @@ def compute_benchmark_data_info(data):
             d = None
         return d
 
-    def eval_dictionary(descr, sources, dictionary):
-        mapped_data = []
-        for source in sources:
-            source_value = dpath(source, descr)
-            mapped_value = None
-            if (not source_value is None) and (source in dictionary):
-                if isinstance(dictionary[source],
-                              dict) and (source_value in dictionary[source]):
-                    mapped_value = dictionary[source][source_value]
-                elif callable(dictionary[source]):
-                    mapped_value = dictionary[source](source_value)
-            mapped_data.append((source, source_value, mapped_value))
-        return list(filter(lambda x: not x[2] is SkipLabel, mapped_data))
+    mapped_data = []
+    for source in sources:
+        source_value = dpath(source, descr)
+        mapped_value = None
+        if (not source_value is None) and (source in dictionary):
+            if isinstance(dictionary[source],
+                          dict) and (source_value in dictionary[source]):
+                mapped_value = dictionary[source][source_value]
+            elif callable(dictionary[source]):
+                mapped_value = dictionary[source](source_value)
+        mapped_data.append((source, source_value, mapped_value))
+    return list(filter(lambda x: not x[2] is SkipLabel, mapped_data))
+
+def assemble_label_str(components):
+    label_str = ""
+    for i in range(len(components)):
+        if i == 1:
+            label_str += " ("
+        if i >= 2:
+            label_str += ", "
+        if not components[i][2] is None:
+            label_str += components[i][2]
+        else:
+            label_str += components[i][0].split("/")[-1] + "=" + str(
+                components[i][1])
+        if (i >= 1) and (i + 1 == len(components)):
+            label_str += ")"
+    return label_str
+
+def compute_label(descr):
+    sources = compute_benchmark_data_info_sources(descr, LABELS)
+    components = eval_dictionary(descr, sources, LABELS)
+    return assemble_label_str(components)
+
+
+def compute_benchmark_data_info(data):
+    import matplotlib.colors
+
+    # Fetch the information sources from the dictionaries defined at the
+    # beginning of this file
+    sets = extract_parameter_sets(data)
+    label_sources = compute_benchmark_data_info_sources(sets, LABELS)
+    colour_sources = compute_benchmark_data_info_sources(sets, COLOURS, False)
+    marker_sources = compute_benchmark_data_info_sources(sets, MARKERS, False)
 
     # Iterate over each dataset in the given data array and generate the
     # corresponding label, colour, and marker
@@ -509,19 +593,7 @@ def compute_benchmark_data_info(data):
         marker = eval_dictionary(descr, marker_sources, MARKERS)[0][2]
 
         # Assemble a label from the data extracted above
-        label_str = ""
-        for i in range(len(label)):
-            if i == 1:
-                label_str += " ("
-            if i >= 2:
-                label_str += ", "
-            if not label[i][2] is None:
-                label_str += label[i][2]
-            else:
-                label_str += label[i][0].split("/")[-1] + "=" + str(
-                    label[i][1])
-            if (i >= 1) and (i + 1 == len(label)):
-                label_str += ")"
+        label_str = assemble_label_str(label)
 
         # Count the number of times a particular colour is used. We'll use
         # different shades of the same colour if we happen to use the same
@@ -594,6 +666,16 @@ def plot_benchmark_data(data,
     if all_ys is None:
         all_ys = []
 
+    # Collect the legend artists and labels
+    legend_artists = [
+        {"color": "#ccc", "linestyle": "-", "linewidth": 1.5},
+        {"color": "#ccc", "linestyle": (0, (1, 1)), "linewidth": 1.5},
+    ]
+    legend_labels = [
+        "Validation error",
+        "Training error",
+    ]
+
     # Plot the individual datasets
     for i, (_, task_data) in enumerate(data):
         # Fetch the important information
@@ -634,8 +716,8 @@ def plot_benchmark_data(data,
                 perc75 = np.nanpercentile(ys, 75, axis=0)
                 ax.fill_between(xs, perc25, perc75, color=colour, alpha=0.25)
 
-            ys_tar = np.nanmedian(ys, axis=0) if plot_median else np.nanmean(ys,
-                                                                       axis=0)
+            ys_tar = np.nanmedian(ys, axis=0) if plot_median else np.nanmean(
+                ys, axis=0)
             all_ys.append(ys_tar)
             ax.plot(xs,
                     ys_tar,
@@ -661,29 +743,21 @@ def plot_benchmark_data(data,
                       linewidth=1.5,
                       colour=colour)
 
+        legend_artists.append({
+            "color": colour,
+            "marker": marker,
+            "linewidth": 1.5,
+        })
+        legend_labels.append(label)
+
+
+
     # Set the axis scaling
-    all_ys = np.asarray(all_ys)
-    all_ys_min = np.nanpercentile(all_ys, 5) * 0.99
-    all_ys_max = np.nanpercentile(all_ys, 95) * 1.01
-    if semilogy is None:
-        if np.nanpercentile(np.abs(all_ys), 1) == 0.0:
-            semilogy = False
-        else:
-            semilogy = True
-
-    if semilogy:
-        ylim_min = np.floor(np.log10(all_ys_min) * 10) / 10
-        ylim_max = np.ceil(np.log10(all_ys_max) * 10) / 10
+    if (semilogy) or (semilogy is None):
         ax.set_yscale("log")
-        ax.set_ylim(np.power(10, ylim_min), np.power(10, ylim_max))
-    if not semilogy:
-        ylim_max_mag = np.power(10, -np.floor(np.log10(all_ys_max)))
-        print(ylim_max_mag, all_ys_max)
-        ylim_max = np.ceil(
-            np.max(np.asarray(all_ys)) * ylim_max_mag) / ylim_max_mag
-        ax.set_ylim(0, ylim_max)
-
-    ax.legend(ncol=info["n_categories"])  # TODO return legend data
+        ax.set_ylim(1e-3, 10)
+    else:
+        ax.set_ylim(0, 1)
 
     ax.spines["right"].set_visible(False)
     ax.spines["top"].set_visible(False)
@@ -692,6 +766,7 @@ def plot_benchmark_data(data,
 
     ax.set_xlim(min(xs), max(xs))
     ax.set_xticks(np.linspace(min(xs), max(xs), 5, dtype=np.int))
-    ax.set_xlabel("Epoch")
     ax.set_ylabel(compute_benchmark_data_ylabel(data))
+
+    return fig, ax, legend_artists, legend_labels
 

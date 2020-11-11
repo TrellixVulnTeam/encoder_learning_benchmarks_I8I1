@@ -354,12 +354,13 @@ def child_process_task(args, task_hash, task):
     benchmark_result = benchmark.run_single_trial(**benchmark_kwargs)
 
     # Make sure the target directory exists
-    os.makedirs(args.tar, exist_ok=True)
+    outfile_dir = os.path.join(args.tar, task_hash[0:2])
+    os.makedirs(outfile_dir, exist_ok=True)
 
     # Create the output file. Write to a temporary file first, then move that
     # file to the target.
     tmpfile = os.path.join(
-        args.tar, ".encoder_learning_benchmarks_{}.tmp".format(task_hash))
+        outfile_dir, ".encoder_learning_benchmarks_{}.tmp".format(task_hash))
     with h5py.File(tmpfile, 'w') as f:
         # Store the task configuration
         f.attrs["task"] = json.dumps(task_dict)
@@ -372,7 +373,8 @@ def child_process_task(args, task_hash, task):
     # completed benchmarks are counted as completed, even if the process is
     # interrupted while saving.
     outfile = os.path.join(
-        args.tar, "encoder_learning_benchmarks_{}.h5".format(task_hash))
+        outfile_dir, "encoder_learning_benchmarks_{}.h5".format(task_hash))
+    os.makedirs(outfile_dir, exist_ok=True)
     os.rename(tmpfile, outfile)
 
 
