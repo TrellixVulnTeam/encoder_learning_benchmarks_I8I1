@@ -208,12 +208,13 @@ def parent_run_main_loop(args, tasks):
         logger.info("Collecting completed tasks...")
         pattern = re.compile(
             "^encoder_learning_benchmarks_([0-9a-fA-F]{40})\\.h5$")
-        for filename in os.listdir(args.tar):
-            match = pattern.match(filename)
-            if match:
-                task_hash = match.groups(1)[0]
-                if task_hash in tasks:
-                    tasks_done.add(task_hash)
+        for _, _, files in os.walk(args.tar):
+            for filename in files:
+                match = pattern.match(filename)
+                if match:
+                    task_hash = match.groups(1)[0]
+                    if task_hash in tasks:
+                        tasks_done.add(task_hash)
         if len(tasks_done) == len(tasks):
             logger.info("Found {}/{} completed tasks. Nothing to do.".format(
                 len(tasks_done), len(tasks)))
