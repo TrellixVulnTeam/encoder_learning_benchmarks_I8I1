@@ -49,7 +49,8 @@ class Voja(EncoderLearningRule):
 manifest = EncoderLearningRuleManifest(name="voja",
                                        ctor=Voja,
                                        supported_network_classes={
-                                           Perceptron,
+                                           "Perceptron",
+                                           "RBF",
                                        },
                                        is_supervised=False)
 

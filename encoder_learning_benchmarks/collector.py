@@ -335,7 +335,7 @@ def collect_tasks(modules, n_repeat=1):
                             if (not enclrn is None) and (
                                     not enclrn.supported_network_classes is
                                     None):
-                                if not (network.ctor
+                                if not (network.ctor.__name__
                                         in enclrn.supported_network_classes):
                                     continue
 
