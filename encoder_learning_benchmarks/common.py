@@ -41,6 +41,21 @@ def mkrng(rng):
     return np.random.RandomState(rng.randint(1 << 31))
 
 
+def numerical_jacobian(f, x, eta=1e-6):
+    x = np.asarray(x, dtype=np.float)
+    n_params, shape = x.size, f(x).shape
+    res = np.zeros((np.prod(shape), n_params))
+    for i in range(n_params):
+        x1 = np.copy(x)
+        x1.flat[i] += 0.5 * eta
+
+        x2 = np.copy(x)
+        x2.flat[i] -= 0.5 * eta
+
+        res[:, i] = ((f(x1) - f(x2)) / eta).flatten()
+    return res.reshape(*shape, *x.shape)
+
+
 ###############################################################################
 # Random Signal Generator                                                     #
 ###############################################################################
@@ -773,7 +788,7 @@ class EncoderLearningRuleManifest(Manifest):
         # type
         assert (supported_network_classes is None) or (isinstance(
             supported_network_classes, set) and all(
-                issubclass(cls, Network) for cls in supported_network_classes))
+                isinstance(cls, str) for cls in supported_network_classes))
 
         # Copy the given arguments
         self._supported_network_classes = supported_network_classes
