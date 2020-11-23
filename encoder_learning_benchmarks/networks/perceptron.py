@@ -142,7 +142,8 @@ class Perceptron(Network):
 manifest = NetworkManifest(name="perceptron",
                            ctor=Perceptron,
                            params={
-                               "initialisation": ("normal", "nef"),
+#                               "initialisation": ("normal", "nef",),
+                               "initialisation": ("nef",),
                                "neuron_type": {
                                     "relu": ReLU
                                },

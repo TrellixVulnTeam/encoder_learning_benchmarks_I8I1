@@ -91,6 +91,8 @@ class RBF(Network):
 manifest = NetworkManifest(name="rbf",
                            ctor=RBF,
                            params={
-                               "initialisation": ("halton", "uniform"),
-                               "learn_covariance": (True, False),
+                               "initialisation": ("halton",),
+                               "learn_covariance": (True,),
+#                               "initialisation": ("halton", "uniform"),
+#                               "learn_covariance": (True, False),
                            })
