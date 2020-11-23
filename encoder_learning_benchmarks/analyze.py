@@ -38,6 +38,7 @@ LABELS = {
     },
     "network/#name": {
         "perceptron": "Single hidden-layer perceptron",
+        "rbf": "Radial basis function network",
     },
     "decoder_learner/#name": {
         "pes": "Delta",
@@ -109,6 +110,12 @@ ERROR_TYPES = {
     "error_rate": "Error rate",
 }
 
+def _encode_latex(s):
+    s = str(s)
+    s = s.replace("_", "\\_")
+    s = s.replace("{", "\\{")
+    s = s.replace("}", "\\}")
+    return s
 
 def _load_single_benchmark_file(f, task_descr):
     with h5py.File(f, 'r') as f:
@@ -544,7 +551,7 @@ def eval_dictionary(descr, sources, dictionary):
             elif callable(dictionary[source]):
                 mapped_value = dictionary[source](source_value)
             else:
-                mapped_value = dictionary[source]
+                mapped_value = _encode_latex(source_value)
         mapped_data.append((source, source_value, mapped_value))
     return list(filter(lambda x: not x[2] is SkipLabel, mapped_data))
 
@@ -558,8 +565,7 @@ def assemble_label_str(components):
         if not components[i][2] is None:
             label_str += components[i][2]
         else:
-            label_str += components[i][0].split("/")[-1] + "=" + str(
-                components[i][1])
+            label_str += _encode_latex(components[i][0].split("/")[-1]) + "=" + _encode_latex(components[i][1])
         if (i >= 1) and (i + 1 == len(components)):
             label_str += ")"
     return label_str
