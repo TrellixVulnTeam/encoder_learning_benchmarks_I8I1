@@ -45,7 +45,8 @@ def run_single_trial(optimizer,
                      sequential=False,
                      n_epochs=1000,
                      compute_test_error=False,
-                     progress=print_progress):
+                     progress=print_progress,
+                     callback=None):
     # Make sure the given arguments are sane
     assert isinstance(dataset, Dataset)
     assert isinstance(network, Network)
@@ -183,6 +184,25 @@ def run_single_trial(optimizer,
 
                 # Normalise the network parameters
                 network.normalize_params()
+
+                # If a callback was given, call it with information about the
+                # current batch -- this is the place into which the animation
+                # code is hooked
+                if not callback is None:
+                    callback({
+                        "i_epoch": i_epoch,
+                        "i_batch": i_batch,
+                        "n_epochs": n_epochs,
+                        "n_batches": n_batches,
+                        "xs_trn_batch": xs_trn_batch,
+                        "ys_trn_batch": ys_trn_batch,
+                        "xs_trn": xs_trn,
+                        "ys_trn": ys_trn,
+                        "D": D,
+                        "network": network,
+                        "eval_net": eval_net,
+                        "eval_net_and_errs": eval_net_and_errs,
+                    })
 
             # If the decoder was not updated in lockstep with the encoders, update
             # the decoders before computing the final epoch error
