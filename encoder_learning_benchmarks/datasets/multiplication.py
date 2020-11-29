@@ -35,7 +35,7 @@ class Multiplication(Dataset):
         if self.biased:
             # Generate some hilbert curve points in polar space
             self.hilbert_curve_pnts, self.hilbert_curve_scale = \
-                generate_hilbert_curve_points(2, 16, ((
+                generate_hilbert_curve_points(2, 12, ((
                 (-np.pi, 0.0),
                 ( np.pi, 1.0)
             )))
