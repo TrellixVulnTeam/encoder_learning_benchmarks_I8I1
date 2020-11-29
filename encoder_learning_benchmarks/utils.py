@@ -17,7 +17,15 @@
 
 import numpy as np
 
-def plot_gaussian(ax, mu, cov=None, theta=None, inverse_cov=False, plot_cross=True, **kwargs):
+
+def plot_gaussian(ax,
+                  mu,
+                  cov=None,
+                  theta=None,
+                  inverse_cov=False,
+                  scale=1.0,
+                  plot_cross=True,
+                  **kwargs):
     import matplotlib.patches
     from .positive_definite_matrix import PositiveDefiniteMatrix
 
@@ -27,23 +35,58 @@ def plot_gaussian(ax, mu, cov=None, theta=None, inverse_cov=False, plot_cross=Tr
     Λ, V = np.linalg.eigh(cov)
     if inverse_cov:
         Λ = 1.0 / Λ
-    σ0 = np.sqrt(Λ[0])
-    σ1 = np.sqrt(Λ[1])
+    σ0 = np.sqrt(Λ[0]) * scale
+    σ1 = np.sqrt(Λ[1]) * scale
     angle_rad = np.arctan2(V[1, 0], V[0, 0])
     angle = angle_rad / np.pi * 180.0
 
-    ellipse = matplotlib.patches.Ellipse(np.copy(mu), 2.0 * σ0, 2.0 * σ1, angle, fill=False, **kwargs)
+    ellipse = matplotlib.patches.Ellipse(np.copy(mu),
+                                         2.0 * σ0,
+                                         2.0 * σ1,
+                                         angle,
+                                         fill=False,
+                                         **kwargs)
     ax.add_patch(ellipse)
     if "linewidth" in kwargs:
         kwargs["linewidth"] *= 0.5
     else:
         kwargs["linewidth"] = 0.75
     if plot_cross:
-        ax.plot([mu[0] - σ0 * np.cos(angle_rad),
-                 mu[0] + σ0 * np.cos(angle_rad)],
-                [mu[1] - σ0 * np.sin(angle_rad),
-                 mu[1] + σ0 * np.sin(angle_rad)], **kwargs)
-        ax.plot([mu[0] + σ1 * np.sin(angle_rad),
-                 mu[0] - σ1 * np.sin(angle_rad)],
-                [mu[1] - σ1 * np.cos(angle_rad),
-                 mu[1] + σ1 * np.cos(angle_rad)], **kwargs)
+        ax.plot(
+            [mu[0] - σ0 * np.cos(angle_rad), mu[0] + σ0 * np.cos(angle_rad)],
+            [mu[1] - σ0 * np.sin(angle_rad), mu[1] + σ0 * np.sin(angle_rad)],
+            **kwargs)
+        ax.plot(
+            [mu[0] + σ1 * np.sin(angle_rad), mu[0] - σ1 * np.sin(angle_rad)],
+            [mu[1] - σ1 * np.cos(angle_rad), mu[1] + σ1 * np.cos(angle_rad)],
+            **kwargs)
+
+
+def _visualise_rbf_network(ax, net, activities):
+    # Draw each unit as an ellipse. Make the line thickness and color
+    # proportional to the activity of the unit
+    for i in range(net.n_dim_hidden):
+        plot_gaussian(ax,
+                      mu=net.mus[i],
+                      theta=net.thetas[i],
+                      inverse_cov=True,
+                      scale=0.25,
+                      linewidth=0.5 + 2.0 * activities[i],
+                      color=np.clip(np.ones(3) * (0.5 - 2.0 * activities[i]), 0, 1))
+
+
+def _visualise_perceptron(ax, net, activities):
+    pass
+
+
+def visualise_network(ax, net, activities=None):
+    # Make sure the given activities have the right shape
+    if activities is None:
+        activities = 0.25 * np.ones(net.n_dim_hidden)
+    assert (activities.ndim == 1) and (activities.size == net.n_dim_hidden)
+
+    if net.__class__.__name__ == "RBF":
+        _visualise_rbf_network(ax, net, activities)
+    elif net.__clas__.__name__ == "Perceptron":
+        _visualise_perceptron(ax, net, activities)
+
