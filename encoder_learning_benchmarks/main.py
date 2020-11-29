@@ -300,7 +300,7 @@ def child_process_task(args, task_hash, task):
     classes_dict = {}
     for key in [
             "optimizer_name", "dataset_name", "network_name",
-            "decoder_learner_name", "encoder_learner_name"
+            "passthrough_name", "decoder_learner_name", "encoder_learner_name"
     ]:
         # Fetch the manifest corresponding to
         module_key = "_".join(key.split("_")[:-1]) + "s"
@@ -331,6 +331,9 @@ def child_process_task(args, task_hash, task):
         # classes
         if class_key == "network":
             params["n_dim_in"] = classes_dict["dataset"].n_dim_in
+            params["n_dim_hidden"] = task.n_dim_hidden
+        if class_key == "passthrough":
+            params["n_dim_in"] = task.n_dim_hidden
             params["n_dim_hidden"] = task.n_dim_hidden
         elif class_key == "decoder_learner":
             params["n_dim_hidden"] = classes_dict["network"].n_dim_hidden

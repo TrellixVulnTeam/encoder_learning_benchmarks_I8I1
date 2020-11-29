@@ -68,14 +68,19 @@ def collect_modules(ignorelist=None, allowlist=None):
 
         # Then sort them into the corresponding categories depending on the manifest
         # type
-        def filter(manifest_type):
+        def filter(manifest_type, match_cb=None):
             return {
                 m.manifest.name: m.manifest
-                for m in modules if isinstance(m.manifest, manifest_type)
+                for m in modules
+                if (isinstance(m.manifest, manifest_type) and (
+                    (match_cb is None) or match_cb(m.manifest)))
             }
 
         _MODULES["datasets"] = filter(DatasetManifest)
-        _MODULES["networks"] = filter(NetworkManifest)
+        _MODULES["networks"] = filter(NetworkManifest,
+                                      lambda m: not m.passthrough)
+        _MODULES["passthroughs"] = filter(NetworkManifest,
+                                          lambda m: m.passthrough)
         _MODULES["optimizers"] = filter(OptimizerManifest)
         _MODULES["decoder_learners"] = filter(DecoderLearningRuleManifest)
         _MODULES["encoder_learners"] = filter(EncoderLearningRuleManifest)
@@ -104,8 +109,8 @@ def collect_modules(ignorelist=None, allowlist=None):
             for key in lst:
                 if not key in used_xlist_keys:
                     raise RuntimeError(
-                        "Allowlist or ignorelist entry \"{}\" is not a valid module!".
-                        format(key))
+                        "Allowlist or ignorelist entry \"{}\" is not a valid module!"
+                        .format(key))
 
     check_xlist_keys(ignorelist)
     check_xlist_keys(allowlist)
@@ -270,7 +275,7 @@ def _combine_dicts(*dicts):
 
 
 def _collect_tasks_for_setup(tasks, n_repeat, method, optimizer, dataset,
-                             network, declrn, enclrn):
+                             network, passthrough, declrn, enclrn):
     # Pre-compute the seeds for all repetitions
     rng = np.random.RandomState(6592392)
     seeds = [rng.randint((1 << 31) - 1) for _ in range(n_repeat)]
@@ -281,6 +286,8 @@ def _collect_tasks_for_setup(tasks, n_repeat, method, optimizer, dataset,
         task.optimizer_name = optimizer.name
         task.dataset_name = dataset.name
         task.network_name = network.name
+        task.passthrough_name = (""
+                                 if passthrough is None else passthrough.name)
         task.decoder_learner_name = declrn.name
         task.encoder_learner_name = ("" if enclrn is None else enclrn.name)
         task.seed = seeds[i]  # Reproducibly select a seed for each combination
@@ -292,21 +299,22 @@ def _collect_tasks_for_setup(tasks, n_repeat, method, optimizer, dataset,
         optimizer_params = _collect_params(task, optimizer)
         dataset_params = _collect_params(task, dataset)
         network_params = _collect_params(task, network)
+        passthrough_params = _collect_params(task, passthrough)
         decoder_learner_params = _collect_params(task, declrn)
         encoder_learner_params = _collect_params(task, enclrn)
 
         # Iterate over all possible combinations of parameters
-        for op, dp, ntp, dlp, elp in _combine_dicts(optimizer_params,
-                                                    dataset_params,
-                                                    network_params,
-                                                    decoder_learner_params,
-                                                    encoder_learner_params):
+        for op, dp, ntp, ptp, dlp, elp in _combine_dicts(
+                optimizer_params, dataset_params, network_params,
+                passthrough_params, decoder_learner_params,
+                encoder_learner_params):
             # Create a copy of the already constructed task and set the
             # parameters accordingly
             t = copy.deepcopy(task)
             t.optimizer_params = op
             t.dataset_params = dp
             t.network_params = ntp
+            t.passthrough_params = ptp
             t.decoder_learner_params = dlp
             t.encoder_learner_params = elp
 
@@ -324,29 +332,31 @@ def collect_tasks(modules, n_repeat=1):
     for method in ["offline", "online"]:
         for dataset in modules["datasets"].values():
             for network in modules["networks"].values():
-                for declrn in modules["decoder_learners"].values():
-                    for enclrn in [
-                            None, *modules["encoder_learners"].values()
-                    ]:
-                        for optimizer in modules["optimizers"].values():
-                            # Only pair encoder learners with their
-                            # corresponding supported network class
-                            if (not enclrn is None) and (
-                                    not enclrn.supported_network_classes is
-                                    None):
-                                if not (network.ctor.__name__
-                                        in enclrn.supported_network_classes):
+                for passthrough in [None, *modules["passthroughs"].values()]:
+                    for declrn in modules["decoder_learners"].values():
+                        for enclrn in [
+                                None, *modules["encoder_learners"].values()
+                        ]:
+                            for optimizer in modules["optimizers"].values():
+                                # Only pair encoder learners with their
+                                # corresponding supported network class
+                                if (not enclrn is None) and (
+                                        not enclrn.supported_network_classes is
+                                        None):
+                                    if not (network.ctor.__name__ in
+                                            enclrn.supported_network_classes):
+                                        continue
+
+                                # XXX Temporarily turn of online learning when using
+                                # MNIST (really slow)
+                                if (dataset.name == "mnist") and (method
+                                                                  == "online"):
                                     continue
 
-                            # XXX Temporarily turn of online learning when using
-                            # MNIST (really slow)
-                            if (dataset.name == "mnist") and (method
-                                                              == "online"):
-                                continue
-
-                            _collect_tasks_for_setup(tasks, n_repeat, method,
-                                                     optimizer, dataset,
-                                                     network, declrn, enclrn)
+                                _collect_tasks_for_setup(
+                                    tasks, n_repeat, method, optimizer,
+                                    dataset, network, passthrough, declrn,
+                                    enclrn)
 
     return tasks
 

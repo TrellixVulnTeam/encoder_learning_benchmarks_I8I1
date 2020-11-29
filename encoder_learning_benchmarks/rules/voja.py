@@ -22,24 +22,23 @@ class Voja(EncoderLearningRule):
     def do_init(self, kappa=1e-4):
         self.kappa = kappa
 
-    def do_step(self, As, xs, _, __, net):
+    def do_step(self, As, xs, _, __, ___, net):
         # Initialize the result array
         dparams = {}
         n_smpls = xs.shape[0]
 
+
         # Fetch the encoders/centres
         P = net.params
-        E = P["encoders"] if "encoders" in P else P["mus"]
+        E_key = "encoders" if ("encoders" in P) else "mus"
+        E = P[E_key]
 
         # Compute the encoder delta (line commented out is the unoptimized
         # version)
 #        dE = np.mean(As[:, :, None] * (xs[:, None, :] - E[None, :, :]), axis=0)
         dE = (As.T @ xs) / n_smpls - np.mean(As, axis=0)[:, None] * E
 
-        if "encoders" in P:
-            dparams["encoders"] = -self.kappa * dE
-        elif "mus" in P:
-            dparams["mus"] = -self.kappa * dE
+        dparams[E_key] = -self.kappa * dE
 
         return dparams
 

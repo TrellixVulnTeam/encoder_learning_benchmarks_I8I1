@@ -528,22 +528,33 @@ class Network:
         # Make sure xs and as_ are 2D arrays and that their first dimension has
         # the same number of entries
         xs = self._condition(xs, self.n_dim_in)
+        N, n, d = xs.shape[0], self.n_dim_hidden, self.n_dim_in
 
         # Compute the jacobian
         if numerical:
-            jacobian = self.do_numerical_jacobian(xs, eta)
+            if len(self._params) == 0:
+                jacobian = np.zeros((N, n, d))
+                for i in range(N):
+                    jacobian[i] = numerical_jacobian(self.activities, xs[i])
+            else:
+                jacobian = self.do_numerical_jacobian(xs, eta)
         else:
             jacobian = self.do_jacobian(xs)
 
-        # Make sure that the returned dictionary has the right entries
-        assert (type(jacobian) == dict) and (tuple(jacobian.keys()) == tuple(
-            self.params.keys()))
+        if isinstance(jacobian, np.ndarray):
+            assert jacobian.shape == (xs.shape[0], self.n_dim_hidden, self.n_dim_in)
+        elif isinstance(jacobian, dict):
+            # Make sure that the returned dictionary has the right entries
+            assert (type(jacobian) == dict) and (tuple(jacobian.keys()) == tuple(
+                self.params.keys()))
 
-        # Make sure that each dictionary entry has the right dimensionality
-        assert all(
-            (p.shape[0] == xs.shape[0]) and (p.shape[1] == self.n_dim_hidden)
-            and (p.shape[1:] == self.params[k].shape)
-            for k, p in jacobian.items())
+            # Make sure that each dictionary entry has the right dimensionality
+            assert all(
+                (p.shape[0] == xs.shape[0]) and (p.shape[1] == self.n_dim_hidden)
+                and (p.shape[1:] == self.params[k].shape)
+                for k, p in jacobian.items())
+        else:
+            raise RuntimeError("Invalid Jacobian type, expected ndarray or dict")
 
         return jacobian
 
@@ -653,7 +664,7 @@ class EncoderLearningRule:
     def do_init(self):
         raise NotImplemented("do_init not implemented")
 
-    def do_step(self, As, xs, errs, D, net):
+    def do_step(self, As, xs, errs, D, Jpt, net):
         raise NotImplemented("do_step not implemented")
 
     def __init__(self, n_dim_in, n_dim_hidden, n_dim_out, rng, *args,
@@ -668,7 +679,7 @@ class EncoderLearningRule:
         # Call the implementation-specific constructor
         self.do_init(*args, **kwargs)
 
-    def step(self, As, xs, errs, D, net):
+    def step(self, As, xs, errs, D, Jpt, net):
         """
         Computes an update for the given decoder.
 
@@ -684,15 +695,18 @@ class EncoderLearningRule:
             xs = xs.reshape(-1, self.n_dim_in)
         if errs.ndim != 2:
             errs = errs.reshape(-1, self.n_dim_out)
-        if D.ndim != 2:
-            D = D.reshape()
+        N, n = As.shape[0], self.n_dim_hidden
+        din, dout = self.n_dim_in, self.n_dim_out
         assert As.shape[0] == xs.shape[0] == errs.shape[0]
-        assert As.shape == (As.shape[0], self.n_dim_hidden)
-        assert xs.shape == (xs.shape[0], self.n_dim_in)
-        assert errs.shape == (errs.shape[0], self.n_dim_out)
+        assert As.shape == (As.shape[0], n)
+        assert xs.shape == (xs.shape[0], din)
+        assert errs.shape == (errs.shape[0], dout)
+        assert (D.ndim == 2) and (D.shape == (dout, n))
+        assert ((Jpt is None) or
+                ((Jpt.ndim == 3) and (Jpt.shape == (N, n, n))))
 
         # Call the actual step function and check the output
-        dparams = self.do_step(As, xs, errs, D, net)
+        dparams = self.do_step(As, xs, errs, D, Jpt, net)
         assert all(dp.shape == net.params[k].shape
                    for k, dp in dparams.items())
         return dparams
@@ -767,7 +781,17 @@ class DatasetManifest(Manifest):
 
 
 class NetworkManifest(Manifest):
-    pass
+    def __init__(self,
+                 name,
+                 ctor,
+                 params=None,
+                 passthrough=False):
+        assert isinstance(passthrough, bool)
+
+        # Call the inherited constructor
+        super().__init__(name, ctor, params)
+        self.passthrough = passthrough
+
 
 
 class DecoderLearningRuleManifest(Manifest):
@@ -824,6 +848,8 @@ class TaskDescriptor:
     dataset_params: dict = dataclasses.field(default_factory=dict)
     network_name: str = ""
     network_params: dict = dataclasses.field(default_factory=dict)
+    passthrough_name: str = ""
+    passthrough_params: dict = dataclasses.field(default_factory=dict)
     decoder_learner_name: str = ""
     decoder_learner_params: dict = dataclasses.field(default_factory=dict)
     encoder_learner_name: str = ""

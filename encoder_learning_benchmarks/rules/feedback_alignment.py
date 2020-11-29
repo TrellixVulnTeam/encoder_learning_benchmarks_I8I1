@@ -24,13 +24,16 @@ class FeedbackAlignment(EncoderLearningRule):
         self.F = self.rng.normal(0, 1, (self.n_dim_out, self.n_dim_hidden))
         self.F /= np.linalg.norm(self.F, axis=0)
 
-    def do_step(self, As, xs, errs, _, net):
+    def do_step(self, As, xs, errs, _, Jpt, net):
         # Compute the network Jacobian
         jacobian = net.jacobian(xs)
 
         # Feedback alignment step. Project the error backwards using a random
-        # feedback alignment matrix.
-        local_err = errs @ self.F
+        # feedback alignment matrix, apply the passthough Jacobian (if given)
+        if Jpt is None:
+            local_err = errs @ self.F
+        else:
+            local_err = np.einsum('...ij,jk,...kk->...k', errs, self.F, Jpt)
 
         # Compute the parameter update
         dparams = {}

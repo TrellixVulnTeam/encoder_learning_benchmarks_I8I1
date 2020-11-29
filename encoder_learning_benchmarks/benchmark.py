@@ -39,11 +39,13 @@ def run_single_trial(optimizer,
                      network,
                      decoder_learner,
                      encoder_learner=None,
+                     passthrough=None,
                      rng=np.random,
                      epoch_size=None,
                      batch_size=100,
                      sequential=False,
                      n_epochs=1000,
+                     n_smpls_per_epoch=10000,
                      compute_test_error=False,
                      progress=print_progress,
                      callback=None):
@@ -53,6 +55,7 @@ def run_single_trial(optimizer,
     assert isinstance(decoder_learner, DecoderLearningRule)
     assert (encoder_learner is None) or (isinstance(encoder_learner,
                                                     EncoderLearningRule))
+    assert (passthrough is None) or (isinstance(passthrough, Network))
     assert (epoch_size is None) or (epoch_size > 0)
     assert batch_size > 0
     assert n_epochs > 0
@@ -70,7 +73,7 @@ def run_single_trial(optimizer,
         if dataset.is_finite:
             epoch_size = dataset.n_max_smpls_training
         else:
-            epoch_size = 10000
+            epoch_size = n_smpls_per_epoch
     if dataset.is_finite:
         epoch_size = min(dataset.n_max_smpls_training, epoch_size)
 
@@ -101,6 +104,16 @@ def run_single_trial(optimizer,
             xs_test, ys_test = dataset.sample(n_smpls_test, "test")
         return xs_trn, ys_trn, xs_val, ys_val, xs_test, ys_test
 
+    def eval_net(xs, D):
+        As = network.activities(xs)
+        if not passthrough is None:
+            As = passthrough.activities(As)
+        return As, As @ D.T
+
+    def eval_net_and_errs(xs, ys, D):
+        As, ys_hat = eval_net(xs, D)
+        return As, ys_hat - ys
+
     def merge(lhs, rhs):
         assert len(lhs) == len(rhs)
         for i in range(len(lhs)):
@@ -110,6 +123,8 @@ def run_single_trial(optimizer,
 
     # Initialize the decoder matrix
     D = np.zeros((n_dim_out, n_dim_hidden))
+    if passthrough is None:
+        Jpt = None
 
     # Add the decoder to the parameter map
     params = {"D": D, **network.params}
@@ -118,7 +133,7 @@ def run_single_trial(optimizer,
     # Initialize the individual dataset samples
     xs_trn, ys_trn, xs_val, ys_val, xs_test, ys_test = samples = [None] * 6
 
-    # Iterate over all epochs.
+    # Iterate over all epochs
     old_errs_settings = np.seterr(**{
         'divide': 'raise',
         'over': 'raise',
@@ -140,8 +155,7 @@ def run_single_trial(optimizer,
             # decoders in a single step at the beginning of the epoch. This is
             # mostly for the LSTSQ solver.
             if (i_epoch == 0) and (not decoder_learner.returns_gradient):
-                As = network.activities(xs_trn)
-                errs = ys_trn - As @ D.T
+                As, errs = eval_net_and_errs(xs_trn, ys_trn, D)
                 D[...] = decoder_learner.step(As, ys_trn, errs, D)
 
             # Generate the batch indices
@@ -164,8 +178,7 @@ def run_single_trial(optimizer,
                 xs_trn_batch, ys_trn_batch = xs_trn[idcs], ys_trn[idcs]
 
                 # Compute the activities of the network for the given input
-                As = network.activities(xs_trn_batch)
-                errs = As @ D.T - ys_trn_batch
+                As, errs = eval_net_and_errs(xs_trn_batch, ys_trn_batch, D)
 
                 # Update the decoder
                 dparams = {}
@@ -173,10 +186,14 @@ def run_single_trial(optimizer,
                     dparams["D"] = decoder_learner.step(
                         As, ys_trn_batch, errs, D)
 
+                # Compute the Jacobian corresponding to the passthough network
+                if not passthrough is None:
+                    Jpt = passthrough.jacobian(network.activities(xs_trn_batch))
+
                 # Update the network parameters
                 if not encoder_learner is None:
                     dparams.update(
-                        encoder_learner.step(As, xs_trn_batch, errs, D,
+                        encoder_learner.step(As, xs_trn_batch, errs, D, Jpt,
                                              network))
 
                 # Update the parameters
@@ -208,13 +225,12 @@ def run_single_trial(optimizer,
             # the decoders before computing the final epoch error
             if (not decoder_learner.returns_gradient) and (
                     not encoder_learner is None):
-                As = network.activities(xs_trn)
-                errs = ys_trn - As @ D.T
+                As, errs = eval_net_and_errs(xs_trn, ys_trn, D)
                 D[...] = decoder_learner.step(As, ys_trn, errs, D)
 
             # Compute the validation and training error after the update
-            ys_trn_hat = network.activities(xs_trn) @ D.T
-            ys_val_hat = network.activities(xs_val) @ D.T
+            _, ys_trn_hat = eval_net(xs_trn, D)
+            _, ys_val_hat = eval_net(xs_val, D)
             errs_training[i_epoch] = dataset.error(ys_trn, ys_trn_hat)
             errs_validation[i_epoch] = dataset.error(ys_val, ys_val_hat)
 

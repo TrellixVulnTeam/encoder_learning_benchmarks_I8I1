@@ -17,3 +17,4 @@
 
 from . import perceptron
 from . import rbf
+from . import softmax

@@ -22,13 +22,16 @@ class Backprop(EncoderLearningRule):
     def do_init(self):
         pass
 
-    def do_step(self, As, xs, errs, D, net):
+    def do_step(self, As, xs, errs, D, Jpt, net):
         # Compute the network Jacobian
         jacobian = net.jacobian(xs)
 
         # Back-propagation step. Compute the influence of each unit on the
         # error.
-        local_err = errs @ D
+        if Jpt is None:
+            local_err = errs @ D
+        else:
+            local_err = np.einsum('...ij,jk,...kk->...k', errs, D, Jpt)
 
         # Compute the parameter update
         dparams = {}
