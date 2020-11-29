@@ -18,6 +18,7 @@
 import numpy as np
 import scipy.linalg.lapack
 
+
 class PositiveDefiniteMatrix:
     """
     Uses the log-Cholesky representation of a positive definite matrix.
@@ -41,6 +42,7 @@ class PositiveDefiniteMatrix:
             for i in range(first_off_diagonal, k):
                 for j in range(k - i):
                     yield (j, i + j)[dim]
+
         self._idcs = (tuple(mkidcs(0)), tuple(mkidcs(1)))
         self._idcs_T = (tuple(mkidcs(1)), tuple(mkidcs(0)))
 
@@ -182,11 +184,15 @@ class PositiveDefiniteMatrix:
                 res[i, :, :, j] = -JInv[i] @ dJ[i, :, :, j] @ JInv[i]
         return res
 
-    def params_from_givens(self, sigmas, angles):
+    def cov_from_givens(self, sigmas, angles):
         """
-        Constructs the parameters theta from the given standard deviations
-        and rotation angles.
+        Constructs a covariance matrix from the given standard deviations and
+        rotation angles.
         """
+        # Make sure all incoming matrices are ndarrays
+        sigmas = np.asarray(sigmas, dtype=np.float)
+        angles = np.asarray(angles, dtype=np.float)
+
         # We need a positive definite matrix!
         assert np.all(sigmas > 0.0)
 
@@ -213,11 +219,11 @@ class PositiveDefiniteMatrix:
             # Construct the Givens matrix Rij
             s, c = np.sin(alpha), np.cos(alpha)
             res = np.eye(k)
-            res[i, i], res[j, i], res[i, j], res[j, j] =  c, -s, s, c
+            res[i, i], res[j, i], res[i, j], res[j, j] = c, -s, s, c
             return res
 
         # Iterate over all samples
-        res = np.zeros((N, n_params))
+        res = np.zeros((N, k, k))
         for smpl in range(N):
             V = np.eye(k)
             idx = 0
@@ -230,13 +236,28 @@ class PositiveDefiniteMatrix:
             # Construct the diagonal matrix of Eigenvalues
             Λ = np.diag(np.square(sigmas[smpl]))
 
-            # Comptue the Cholesky decomposition of the corresponding
-            # positive definite matrix.
-            L = np.linalg.cholesky(V @ Λ @ V.T)
+            # Construct the final covariance matrix
+            res[smpl] = V @ Λ @ V.T
+        return res
+
+    def params_from_givens(self, sigmas, angles):
+        """
+        Constructs the parameters theta from the given standard deviations
+        and rotation angles.
+        """
+        # Compute the covariance matrices
+        covs = self.cov_from_givens(sigmas, angles)
+
+        # Iterate over all samples
+        res = np.zeros((N, n_params))
+        for smpl in range(N):
+            # Compute the Cholesky decomposition of the covariance matrix
+            L = np.linalg.cholesky(covs[smpl])
 
             # Encode the parameter vector according to the encoding given
             # in the constructor.
             self._encode_params(res[smpl], L[self._idcs_T])
+
         return res
 
     @property
