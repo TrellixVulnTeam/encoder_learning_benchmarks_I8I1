@@ -49,14 +49,14 @@ class RBF(Network):
         if (initialisation == "halton") and (d <= 50):
             self.mus = r * (2.0 * halton(n, d) - 1.0)
         else:
-            self.mus = r * np.random.uniform(-1, 1, (n, d))
+            self.mus = r * self.rng.uniform(-1, 1, (n, d))
 
         # Randomly select the thetas. This is easiest in the computationally
         # more complex Givens representation, since we can just randomly select
         # angles and standard deviations.
-        sigmas_inv_log10 = np.random.uniform(-1.0, 0.0, (n, d))
+        sigmas_inv_log10 = self.rng.uniform(-1.0, 0.0, (n, d))
         sigmas_inv = np.power(n, 1.0 / d) / r * np.power(10.0, sigmas_inv_log10)
-        angles = np.random.uniform(0.0, np.pi, (n, ((d - 1) * d) // 2))
+        angles = self.rng.uniform(0.0, np.pi, (n, ((d - 1) * d) // 2))
         self.thetas = self._dist.pdm.params_from_givens(sigmas_inv, angles)
 
         # Create and return a map containing all the trainable parameters
