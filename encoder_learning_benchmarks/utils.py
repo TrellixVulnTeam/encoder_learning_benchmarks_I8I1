@@ -62,7 +62,7 @@ def plot_gaussian(ax,
             **kwargs)
 
 
-def _visualise_rbf_network(ax, net, activities):
+def _visualise_rbf_network(ax, net, activities, cov_scale=0.25):
     # Draw each unit as an ellipse. Make the line thickness and color
     # proportional to the activity of the unit
     for i in range(net.n_dim_hidden):
@@ -70,7 +70,7 @@ def _visualise_rbf_network(ax, net, activities):
                       mu=net.mus[i],
                       theta=net.thetas[i],
                       inverse_cov=True,
-                      scale=0.25,
+                      scale=cov_scale,
                       linewidth=0.5 + 2.0 * activities[i],
                       color=np.clip(np.ones(3) * (0.5 - 2.0 * activities[i]), 0, 1))
 
@@ -79,14 +79,14 @@ def _visualise_perceptron(ax, net, activities):
     pass
 
 
-def visualise_network(ax, net, activities=None):
+def visualise_network(ax, net, activities=None, cov_scale=0.25):
     # Make sure the given activities have the right shape
     if activities is None:
         activities = 0.25 * np.ones(net.n_dim_hidden)
     assert (activities.ndim == 1) and (activities.size == net.n_dim_hidden)
 
     if net.__class__.__name__ == "RBF":
-        _visualise_rbf_network(ax, net, activities)
+        _visualise_rbf_network(ax, net, activities, cov_scale=cov_scale)
     elif net.__clas__.__name__ == "Perceptron":
         _visualise_perceptron(ax, net, activities)
 

@@ -140,6 +140,7 @@ def run_single_trial(optimizer,
         'under': 'ignore',
         'invalid': 'raise'
     })
+
     try:
         for i_epoch in range(n_epochs):
             # If this is the first epoch or the dataset is infinite, sample new
@@ -150,13 +151,6 @@ def run_single_trial(optimizer,
                 xs_trn, ys_trn, xs_val, ys_val, xs_test, ys_test = merge(
                     samples,
                     sample(first_epoch, compute_test_error and first_epoch))
-
-            # If the decoder learner does not support mini batches, update the
-            # decoders in a single step at the beginning of the epoch. This is
-            # mostly for the LSTSQ solver.
-            if (i_epoch == 0) and (not decoder_learner.returns_gradient):
-                As, errs = eval_net_and_errs(xs_trn, ys_trn, D)
-                D[...] = decoder_learner.step(As, ys_trn, errs, D)
 
             # Generate the batch indices
             if (not encoder_learner is None
@@ -180,7 +174,8 @@ def run_single_trial(optimizer,
                 # Compute the activities of the network for the given input
                 As, errs = eval_net_and_errs(xs_trn_batch, ys_trn_batch, D)
 
-                # Update the decoder
+                # If the decoder learner returns a gradient, update the decoder
+                # at this point in time.
                 dparams = {}
                 if decoder_learner.returns_gradient:
                     dparams["D"] = decoder_learner.step(
@@ -201,6 +196,15 @@ def run_single_trial(optimizer,
 
                 # Normalise the network parameters
                 network.normalize_params()
+
+                # If the decoder learner does not return a gradient, perform an
+                # update now. This ensures that the callback below will always
+                # see a decoder that is optimized for the updated decoders.
+                if not decoder_learner.returns_gradient:
+                    As_global, errs_global = \
+                        eval_net_and_errs(xs_trn, ys_trn, D)
+                    D[...] = \
+                        decoder_learner.step(As_global, ys_trn, errs_global, D)
 
                 # If a callback was given, call it with information about the
                 # current batch -- this is the place into which the animation
@@ -223,8 +227,7 @@ def run_single_trial(optimizer,
 
             # If the decoder was not updated in lockstep with the encoders, update
             # the decoders before computing the final epoch error
-            if (not decoder_learner.returns_gradient) and (
-                    not encoder_learner is None):
+            if (encoder_learner is None) and (not decoder_learner.returns_gradient):
                 As, errs = eval_net_and_errs(xs_trn, ys_trn, D)
                 D[...] = decoder_learner.step(As, ys_trn, errs, D)
 
@@ -245,6 +248,7 @@ def run_single_trial(optimizer,
             err_test = dataset.error(ys_test, ys_test_hat)
 
     except (FloatingPointError, np.linalg.LinAlgError) as e:
+        raise e
         # Something broke. Write NaN values to the result files to indicate
         # this.
         errs_training[i_epoch:] = np.nan

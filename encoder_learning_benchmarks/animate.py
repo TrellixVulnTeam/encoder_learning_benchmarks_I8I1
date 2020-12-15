@@ -48,7 +48,8 @@ class Animation:
                  sec_per_smpl=1e-3,
                  gridres=41,
                  radius=1.5,
-                 err_range=0.25):
+                 err_range=0.25,
+                 cov_scale=0.25):
         # Create a pseudo-random name if none is given
         if name is None:
             import datetime
@@ -75,6 +76,7 @@ class Animation:
         self.gridres = gridres
         self.radius = radius
         self.err_range = err_range
+        self.cov_scale = cov_scale
         assert self.smpls_per_frame > 0
 
         # Reset all internal buffers
@@ -137,7 +139,8 @@ class Animation:
                    vmax=self.err_range)
 
         # Visualize the network
-        utils.visualise_network(ax, network, np.mean(As, axis=0))
+        utils.visualise_network(ax, network,
+            np.mean(As, axis=0), cov_scale=self.cov_scale)
 
         # Render a bit more than just the data range
         r = self.radius

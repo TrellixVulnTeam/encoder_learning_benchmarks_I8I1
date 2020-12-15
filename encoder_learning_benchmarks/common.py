@@ -758,10 +758,14 @@ class Optimizer:
 
 
 class Manifest:
-    def __init__(self, name, ctor, params=None):
+    def __init__(self, name, ctor, params=None, validate_task=None):
         self._name = name
         self._ctor = ctor
         self._params = {} if params is None else params
+        self._validate_task = validate_task
+
+    def validate_task(self, t):
+        return True if (self._validate_task is None) else self._validate_task(t)
 
     @property
     def name(self):
@@ -785,11 +789,12 @@ class NetworkManifest(Manifest):
                  name,
                  ctor,
                  params=None,
+                 validate_task=None,
                  passthrough=False):
         assert isinstance(passthrough, bool)
 
         # Call the inherited constructor
-        super().__init__(name, ctor, params)
+        super().__init__(name, ctor, params, validate_task)
         self.passthrough = passthrough
 
 
@@ -803,6 +808,7 @@ class EncoderLearningRuleManifest(Manifest):
                  name,
                  ctor,
                  params=None,
+                 validate_task=None,
                  supported_network_classes=None,
                  is_supervised=True):
         # Call the inherited constructor

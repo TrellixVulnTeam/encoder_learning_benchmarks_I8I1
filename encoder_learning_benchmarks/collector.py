@@ -293,6 +293,7 @@ def _collect_tasks_for_setup(tasks, n_repeat, method, optimizer, dataset,
         task.seed = seeds[i]  # Reproducibly select a seed for each combination
         task.sequential = (method == "online")
         task.batch_size = 1 if (method == "online") else 100
+        task.n_dim_hidden = 10 if (dataset.name == "multiplication") else 100
 
         # For each component, collect all parameters given the task descriptor
         # so far
@@ -317,6 +318,14 @@ def _collect_tasks_for_setup(tasks, n_repeat, method, optimizer, dataset,
             t.passthrough_params = ptp
             t.decoder_learner_params = dlp
             t.encoder_learner_params = elp
+
+            # Skip the task if one of the manifests is not happy with the
+            # parameter combination
+            for manifest in filter(
+                    bool,
+                (optimizer, dataset, network, passthrough, declrn, enclrn)):
+                if not manifest.validate_task(t):
+                    continue
 
             # Compute a hash for the task and append it to the tasks dictionary
             tasks[compute_task_hash(t)] = t

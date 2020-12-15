@@ -15,9 +15,13 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from . import lstsq
-from . import pes
 from . import backprop
 from . import feedback_alignment
-from . import voja
+from . import lstsq
+from . import neural_gas
 from . import oja
+from . import pca
+from . import pes
+from . import voja
+
+

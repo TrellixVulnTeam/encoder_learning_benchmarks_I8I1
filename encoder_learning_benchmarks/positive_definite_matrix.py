@@ -34,10 +34,10 @@ class PositiveDefiniteMatrix:
         self._linlog = linlog
 
         # Compute the total number of parameters. All positive semidefinite
-        # matrices can be represented using a riagonal matrix
+        # matrices can be represented using a triangular matrix.
         self._n_params = (k * (k + 1)) // 2
 
-        # Compute indices pointing at the upper tridiagonal matrix
+        # Compute indices pointing at the upper triangular matrix
         def mkidcs(dim, first_off_diagonal=0):
             for i in range(first_off_diagonal, k):
                 for j in range(k - i):
@@ -46,8 +46,8 @@ class PositiveDefiniteMatrix:
         self._idcs = (tuple(mkidcs(0)), tuple(mkidcs(1)))
         self._idcs_T = (tuple(mkidcs(1)), tuple(mkidcs(0)))
 
-        # We'll also use the upper triagonal matrix indices and the lower
-        # triagonal matrix indices
+        # We'll also use the upper triangular matrix indices and the lower
+        # triangular matrix indices
         self._idcs_upper = (tuple(mkidcs(0, 1)), tuple(mkidcs(1, 1)))
         self._idcs_lower = (tuple(mkidcs(1, 1)), tuple(mkidcs(0, 1)))
 
@@ -108,7 +108,7 @@ class PositiveDefiniteMatrix:
             # logarithm; this ensures that the entries are strictly positive.
             self._linearise_params(p, params[i])
 
-            # Fill the upper tridiagonal
+            # Fill the upper triangle
             L[i][self._idcs] = p
 
         return L
@@ -117,7 +117,7 @@ class PositiveDefiniteMatrix:
         # Condition the input parameters
         N, params, k, q = self._condition_input(params)
 
-        # Create temporary parameter vector and upper triagonal matrix
+        # Create temporary parameter vector and upper triangular matrix
         p, L = np.zeros(q), np.zeros((k, k))
 
         # Compute the resulting matrices
@@ -127,11 +127,11 @@ class PositiveDefiniteMatrix:
             # logarithm; this ensures that the entries are strictly positive.
             self._linearise_params(p, params[i])
 
-            # Fill the upper tridiagonal
+            # Fill the upper triangle
             L[self._idcs] = p
 
             # Compute the inverse; we already have the output matrix in upper
-            # triagonal form, so we can use a special function to compute the
+            # triangular form, so we can use a special function to compute the
             # inverse
             res[i], _ = scipy.linalg.lapack.dpotri(L)
             res[i][self._idcs_lower] = res[i][self._idcs_upper]
@@ -142,7 +142,7 @@ class PositiveDefiniteMatrix:
         # Condition the input parameters
         N, params, k, q = self._condition_input(params)
 
-        # Create a temporary parameter vector and upper triagonal matrix
+        # Create a temporary parameter vector and upper triangular matrix
         p, dp, L = np.zeros(q), np.zeros(q), np.zeros((k, k))
 
         # Compute the resulting matrices
@@ -240,13 +240,12 @@ class PositiveDefiniteMatrix:
             res[smpl] = V @ Λ @ V.T
         return res
 
-    def params_from_givens(self, sigmas, angles):
+    def params_from_cov(self, covs):
         """
-        Constructs the parameters theta from the given standard deviations
-        and rotation angles.
+        Constructs the parameter vectors from a list of covariance matrices.
         """
-        # Compute the covariance matrices
-        covs = self.cov_from_givens(sigmas, angles)
+        # Fetch some useful constants
+        N, n_params = covs.shape[0], self.n_params
 
         # Iterate over all samples
         res = np.zeros((N, n_params))
@@ -259,6 +258,14 @@ class PositiveDefiniteMatrix:
             self._encode_params(res[smpl], L[self._idcs_T])
 
         return res
+
+    def params_from_givens(self, sigmas, angles):
+        """
+        Constructs the parameters theta from the given standard deviations
+        and rotation angles.
+        """
+        return self.params_from_cov(self.cov_from_givens(sigmas, angles))
+
 
     @property
     def order(self):
